@@ -1,0 +1,21 @@
+# local scratch / analysis artifacts
+.local/
+_crop_*.png
+
+# firmware / build output
+build/
+.pio/
+.pioenvs/
+.piolibdeps/
+*.bin
+*.elf
+*.map
+
+# python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+Thumbs.db
+.DS_Store
