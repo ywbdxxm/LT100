@@ -4,6 +4,7 @@
 - 适用：LT100 / 微雪 Servo Driver with ESP32（ESP32-WROOM-32，CP2102）
 - 目标：先花 30 秒判断你这块板属于哪一类，再按对应路线烧；两条路线都能烧成功，区别只在"谁把 IO0 拉低"
 - 结论先说：**烧录有两类**——A 类自动下载（一条 `upload` 命令搞定），B 类必须手动按住 `KEY_FLASH`。同一块板子在另一台 Windows 11 上走 A 类，在本机走 **B 类**；差异在主机侧，见 §3。
+- **A/B 类说的是“当前主机 + 这块板”的组合，不是板子型号，也不是机器型号。** 同一块板换主机可能从 B 变 A；先按 §2 实测，别凭外观预设。本文的“本机”默认指 B 机（必须手动的那台）。
 
 ## 1. 两条路线一张表
 
@@ -15,7 +16,7 @@
 | 典型耗时 | app 342 KB ≈ 3.5 s；4 MB merged ≈ 11 s | 同左（仍然是 stub + 921600） |
 | 成功首行 | 直接出现 `Connected to ESP32 on COMx` | 先出现 `waiting for download`，再 `Connected` |
 | 失败症状 | 很少失败 | `Connecting.....` 之后 `Wrong boot mode detected (0x13)!` |
-| 适用范围 | 大多数 ESP32 开发板 | 自动下载电路没接好/没生效的板子，比如本机这块 |
+| 适用范围 | 大多数 ESP32 开发板 | 当前主机没能触发自动下载的组合，比如 B 机 + 这块板 |
 
 两条路线**共用**后面的编译、验证、安全检查；只有"怎么进下载模式"这一段不同。
 
@@ -58,7 +59,9 @@ waiting for download
 
 `0x13` 的含义是"芯片好好地在跑正式固件"，不是 Flash 坏了、也不是固件被清空。**旧固件还在**，重试一百次也不会自己变成下载模式。
 
-## 3. 实测：自动下载在本机为什么不生效
+## 3. 实测：自动下载在 B 机为什么不生效
+
+> 本节记录的是 **B 机**（必须手动按 `KEY_FLASH` 的那台）的现象。A 机用**同一块实物板**已经 `AUTO-OK` + `UPLOAD-OK`，所以下面的“本机”均指 B 机；不要把 B 机的结论套到所有机器上。
 
 `.tmp-flash/probe-seq.ps1` 保持串口打开、按不同次序拨 DTR/RTS，每一步都读启动日志（DTR/RTS 用 .NET `DtrEnable`/`RtsEnable` 表示，`1` = 断言）：
 
@@ -77,10 +80,10 @@ Connecting..................
 A fatal error occurred: Failed to connect to ESP32: Wrong boot mode detected (0x13)!
 ```
 
-结论分两句，别混：
+结论要分清“B 机上发生了什么”和“电路能不能”：
 
-1. **复位链路是好的**：所有组合都能让芯片复位（日志里的 `rst:0x1 (POWERON_RESET)` 就是证据），说明 EN 那一路工作正常。
-2. **IO0 在本机始终是高**：没有任何 DTR/RTS 组合能让芯片在复位释放的瞬间采样到 IO0 = 低，所以永远 `boot:0x13`。
+1. **B 机的复位链路是好的**：日志里的 `rst:0x1 (POWERON_RESET)` 说明 EN 那一路被触发过。
+2. **B 机的 .NET 线序探测没有把 IO0 拉低到启动采样点**：这几组自定义序列都停在 `boot:0x13`。但这只证明“这组 .NET 时序在 B 机上没生效”，**不能证明电路不可能进下载**——A 机用同一块板、同一个 esptool 已经自动连上并烧录成功；同一轮 5 组序列在 A 机也同样全是 `0x13/none`。
 
 对照原理图 `docs/reference/board/servo-driver-esp32-board-schematic.pdf` 里的 `AUTO PROGRAM CIRCUIT B`：
 
@@ -90,22 +93,22 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 真值表（DTR RTS → RST GPIO0）：(1,1)→(1,1) (0,0)→(1,1) (1,0)→(0,1) (0,1)→(1,0)
 ```
 
-真值表里**不存在 RST=0 且 GPIO0=0 的那一行**，也就是说这块板的电路按图无法同时"按住复位 + 拉低 IO0"。
+真值表里 `(DTR=0, RTS=1) → RST=1, GPIO0=0` 正是“释放复位时 IO0 为低”的下载状态；esptool 的 ClassicReset 就走这条。问题不在“电路缺这一行”，而在**B 机的主机侧有没有按顺序、按时间把这两次电平变化送到 CP210x**。
 
-> **归属已经缩到"这台机器"**：同一块实物板子在另一台 **Windows 11** 机器上 `arduino-cli upload` 直接自动烧录成功，在这台上则永远 `0x13`。同一块板 + 同一系统版本，说明问题既不在板子，也不在 Windows 版本，而在这台机器的**主机侧**：USB 口/线、CP210x 驱动对 DTR/RTS 的处理、或某个抢占串口的后台程序。
+> **归属已经缩到 B 机**：同一块实物板子在 A 机（另一台 **Windows 11**）上 `arduino-cli upload` 直接自动烧录成功，在 B 机上则总是 `0x13`。同一块板 + 同一系统版本，说明问题既不在板子，也不在 Windows 版本，而在 B 机的**主机侧**：USB 口/线、CP210x 驱动对 DTR/RTS 的处理、或某个抢占串口的后台程序。
 >
-> 要定位，在**能自动烧录的那台机器**上抓一次 verbose：
+> 要定位，在 B 机上抓一次自动连接日志：
 >
 > ```powershell
 > $esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.3.1\esptool.exe"
 > & $esptool --chip esp32 -p COMx -b 921600 -v --before default-reset chip-id
 > ```
 >
-> `-v` 会逐次打印 DTR/RTS 的翻转与同步尝试。两台机器的日志一对比：翻转序列一样 → 差异在电气/端口；序列不一样 → 差异在驱动或工具。
+> **注意：esptool 5.3.1 的 `-v` 不打印 DTR/RTS 翻转明细**，只打印 `Connecting....`、`Connected` 或 `Wrong boot mode detected (0x13)`。不要按“翻转明细”对比；看 `auto-chip-id.txt` 原文和 `upload-01.txt` 的 `Hash of data verified`。
 >
 > 一键采集脚本与完整判读表见 [flashing-crosscheck.md](flashing-crosscheck.md)（`tools\flash-probe.ps1`）。
 >
-> 在得出结论前，**本机的可行路线只有 B 类**（§4）：手按 `KEY_FLASH` 提供 IO0 低，软件拉 RTS 产生复位。
+> 在 B 机上，**可行路线只有 B 类**（§4）：手按 `KEY_FLASH` 提供 IO0 低，软件拉 RTS 产生复位。
 
 **已排除的干扰项**（都实测过，别再重复排障）：
 
@@ -113,7 +116,7 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 |---|---|
 | 驱动版本 | 10.1.10.103 / 11.1.0.53 / 11.6.0.420 三个版本，行为完全一致 |
 | Windows USB 省电 | 关掉选择性挂起 + `LatencyTimer=1` 后仍 `0x13` |
-| USB Hub / 扩展坞 | 直插 `USB\ROOT_HUB30\...`，没有外部 Hub |
+| USB Hub / 控制器 | B 机直插 `USB\ROOT_HUB30\...`（USB 3.x）仍 `0x13`；A 机经 USB2.1 Hub 反而成功 → Hub 不是根因，B 可试 USB 2.0 Hub/端口 |
 | 板子个体 | 换过另一块同型号实物板，本机同样 `0x13`；同型号板在另一台机器上可自动烧 |
 | 波特率 | 115200 / 921600 都进不去下载模式 |
 
@@ -197,7 +200,7 @@ Hard resetting via RTS pin...
 
 | 误区 | 事实 |
 |---|---|
-| "多试几次自动就好了" | B 类环境下 IO0 始终是高（§3 实测），重试不会有变化 |
+| "多试几次自动就好了" | B 机上 .NET 线序探测没有拿到 IO0 低（§3 实测）；先手动，别靠重试 |
 | "按 `KEY_RST` 复位" | 实测无效，复位只能靠软件拉 RTS |
 | "用 `--no-stub` 更稳" | 更慢：ROM loader 上限 115200，4 MB 要 34 s；stub 921600 只要 11 s |
 | "stub 一定掉线" | 早期 stub 在 30% 断线是**握手时机**问题；芯片已在下载模式后再连就稳 |
@@ -292,7 +295,7 @@ SCAN done: 3/3 online
 
 | 文件 | 作用 |
 |---|---|
-| `probe-seq.ps1` | 保持串口打开，按不同次序拨 DTR/RTS，每步读启动日志，用于判定 A/B 类 |
+| `probe-seq.ps1` | 保持串口打开，按不同次序拨 DTR/RTS，每步读启动日志；仅作补充，不能单独判定 A/B 类 |
 | `rts-reset.ps1` | 只做"拉 RTS 120 ms 复位"这一个动作 |
 | `flash-one.sh` | 循环：复位 → 确认 `waiting for download` → stub 921600 写入 |
 | `flash-01.log` / `flash-02.log` / `flash-fast.log` | 各次烧录原始日志（端口号已脱敏为 `COMx`） |

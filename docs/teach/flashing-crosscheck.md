@@ -6,6 +6,12 @@
 - 目的：用同一套脚本、同一块板、同一根线，把两台机器上的 **DTR/RTS 翻转序列** 和 **结果** 全部录下来，逐行对比，定位差异到底在哪一层
 - 执行方式：在 **A 机**上按本文件跑一遍，把生成的报告目录整个发回；B 机的报告已按同样方法生成
 
+> **2026-11-21 A 机实测后的判读校正（先看这三条）**
+>
+> 1. 旧版 `tools\flash-probe.ps1` 的 `AUTO-FAIL` 可能是**脚本误报**：它找 `Chip is ESP32`，而 esptool 5.3.1 输出的是 `Chip type: ESP32-...`。拿到旧报告时，先打开 `logs\auto-chip-id.txt` 看原文里有没有 `Connected to ESP32`，不要只看 `summary.txt`。
+> 2. esptool 5.3.1 的 `-v` **不打印 DTR/RTS 翻转明细**，日志里只有 `Connecting....`、`Connected` 或 `Wrong boot mode detected (0x13)`。因此不能按本文旧版 §4 去逐行对比翻转。
+> 3. 第 3 步的 5 组 .NET DTR/RTS 序列**不等价于 esptool 的复位序列**：A 机（自动烧录正常）这 5 组也全部是 `boot=0x13` 或 `none`，但同一块板 `AUTO-OK` 且 `UPLOAD-OK`。这组结果只能作补充，**不能单独用来判“自动下载电路坏”**。
+
 ## 1. 交付物
 
 跑完后会得到这样一个目录（脚本自己创建）：
@@ -17,12 +23,12 @@ flashing-report\
     serial-ports.txt        ← 端口枚举
     driver.txt              ← CP210x 驱动版本/日期/INF
     core-list.txt           ← arduino-cli core 版本
-    auto-chip-id.txt        ← 关键：verbose 自动下载日志（含每次 DTR/RTS 翻转）
-    seq-*.txt               ← 5 条 DTR/RTS 序列各自的启动日志
+    auto-chip-id.txt        ← 关键：自动下载的原始日志（Connected / 0x13）
+    seq-*.txt               ← 5 条 DTR/RTS 序列各自的启动日志（仅作补充）
     upload-01.txt           ← arduino-cli 真实上传日志（可跳过）
 ```
 
-把 `flashing-report` 整个文件夹打包发回即可，**不要**只截 `summary.txt`——判读要看 `auto-chip-id.txt` 里的翻转明细。
+把 `flashing-report` 整个文件夹打包发回即可，**不要**只截 `summary.txt`——判读要看 `auto-chip-id.txt` 原文里的 `Connected` / `Wrong boot mode`，以及 `upload-01.txt` 里的 `Hash of data verified`。
 
 ## 2. 准备（两分钟）
 
@@ -71,50 +77,50 @@ powershell -ExecutionPolicy Bypass -File .\tools\flash-probe.ps1 -Port COMx -Ski
 powershell -ExecutionPolicy Bypass -File .\tools\flash-probe.ps1 -Port COMx -OutDir C:\tmp\flashing-report
 ```
 
-## 4. 关键：第 2 步的 verbose 日志怎么读
+## 4. 关键：第 2 步的日志怎么读
 
-`logs\auto-chip-id.txt` 里，DTR/RTS 的每次翻转都以这样的形式出现（esptool v5）：
+**esptool 5.3.1 的 `-v` 不打印 DTR/RTS 翻转明细。** 成功时 `logs\auto-chip-id.txt` 的关键行是：
 
 ```text
-Changing baud rate to 921600...
-...
+Serial port COMx:
+Connecting....
 Connected to ESP32 on COMx:
 Chip type:          ESP32-D0WD-V3 (revision v3.1)
+MAC:                xx:xx:xx:xx:xx:xx
 ```
 
-失败时则是：
+失败时是：
 
 ```text
 Connecting........................................................................
-A fatal error occurred: Failed to connect to Esp32: Wrong boot mode detected (0x13)!
+A fatal error occurred: Failed to connect to ESP32: Wrong boot mode detected (0x13)!
 The chip needs to be in download mode.
 ```
 
-要对比的是**连接成功/失败之前那一小段**，典型形态：
+要对比的只有三件事：
 
-```text
-DTR=1 RTS=0  →  DTR=0 RTS=1  →  DTR=0 RTS=0
-```
+1. `summary.txt` 是 `AUTO-OK` 还是 `AUTO-FAIL`；
+2. `auto-chip-id.txt` 原文里有没有 `Connected to ESP32`（**旧脚本的 `AUTO-FAIL` 可能误报，以原文为准**）；
+3. 两台机器的 `MAC:` 是否相同（确认是不是同一块实物板）。
 
-把两台机器的这段序列贴在一起，就能回答两个问题：
-
-- 两次翻转的**顺序和电平**是否一致？
-- 若一致，是不是在同样的电平下，一边能拿到同步应答、一边拿不到？
-
-## 5. 判读表：四种组合，四种结论
+## 5. 判读表：以 raw log 为准
 
 | A 机（能自动） | B 机（本机） | 说明 | 下一步 |
 |---|---|---|---|
-| `AUTO-OK` | `AUTO-FAIL` | 两台翻转序列**完全相同** | 差异在电气层：USB 口 / 线材 / 板子连接器 / 驱动对电平的处理 |
-| `AUTO-OK` | `AUTO-FAIL` | 翻转序列**不同**（顺序或电平不一致） | 差异在驱动或工具层：比对第一个分歧点，看是哪边少/多一次翻转 |
+| `AUTO-OK` | `AUTO-FAIL` | raw log 里 B 确实是 `Wrong boot mode 0x13`，且 MAC 相同 | 同一块板换主机就变 → 主机侧：USB 口/线材/CP210x 驱动对 DTR/RTS 的处理/时序 |
 | `AUTO-OK` | `AUTO-OK` | 本机其实也能自动 | 之前的失败是偶发，检查是否有程序抢串口 |
-| `AUTO-FAIL` | `AUTO-FAIL` | 两台都失败 | 问题不在机器，回到板子/线材，或直接走 §6 手动路线 |
+| `AUTO-FAIL` | `AUTO-FAIL` | 两台都失败 | 回到板子/线材，或直接走 §6 手动路线 |
+| summary 与 raw log 矛盾 | — | 旧脚本判定 bug | 不要用 summary 下结论；先更新 `flash-probe.ps1` 再重跑 |
 
-序列探测（第 3 步）的结果还能进一步缩小范围：
+**A 机已实测基线（2026-11-21）**：`AUTO-OK`、`UPLOAD-OK`（`Hash of data verified`）；同一轮第 3 步 5 组序列全是 `boot=0x13` 或 `none`。所以：
 
-- 两台都能在某条序列里看到 `download=DOWNLOAD` → 自动下载电路是好的，问题只在 esptool 的时序/驱动
-- 两台都是 `boot=0x13`、没有任何一组出现 `DOWNLOAD` → 该板的两管自动下载电路确实不工作，只能手动
-- 只有 B 机拿不到 `boot:` 行（`boot=none`）→ 该机的复位脉冲根本没发出去，重点查 USB 口/驱动
+- 第 3 步出现 `download=DOWNLOAD` 可以作为**正面**证据（自动下载链路能进下载模式）；
+- 第 3 步全是 `0x13/none` **不能**反推“自动下载电路坏”——A 机就是反例。这 5 组 .NET 序列不等价于 esptool 的内部复位序列。
+
+A 机的 CP210x 还**不是直插 root hub**：它接在一个 Genesys Logic 的 **USB2.1 Hub** 上（`Port_#0002.Hub_#0006`，父设备 `USB\VID_05E3&PID_0610`），仍然自动烧录成功；B 机是直插 `ROOT_HUB30`（USB 3.x 根集线器）却失败。因此“Hub 一定会导致自动下载失败”也不成立，反而提示一个可测差异：
+
+- 在 B 机上把板子接到一个 **USB 2.0 Hub** 或 **USB 2.0 端口**（黑色口），再跑 `flash-probe.ps1 -SkipUpload`；
+- 如果变成 `AUTO-OK`，差异就在 USB 主控制器/Hub 对 DTR/RTS 控制传输的时序处理，而不是板子或驱动版本。
 
 ## 6. 如果确认必须手动（B 类）
 
@@ -123,10 +129,12 @@ DTR=1 RTS=0  →  DTR=0 RTS=1  →  DTR=0 RTS=0
 ## 7. 回传内容清单
 
 - [ ] `flashing-report\summary.txt`
-- [ ] `flashing-report\logs\auto-chip-id.txt`（最关键）
-- [ ] `flashing-report\logs\seq-*.txt`
+- [ ] `flashing-report\logs\auto-chip-id.txt`（最关键，先看原文有没有 `Connected`）
+- [ ] `flashing-report\logs\upload-01.txt`（有没有 `Hash of data verified`）
+- [ ] `flashing-report\logs\seq-*.txt`（仅作补充）
 - [ ] `flashing-report\logs\driver.txt`
-- [ ] 一句话说明：用的是**同一块板**还是同型号另一块；**同一根线**吗；插的是机箱后面还是前面板的 USB 口
+- [ ] `flashing-report\logs\serial-ports.txt`
+- [ ] 一句话说明：用的是**同一块板**还是同型号另一块（最好附 `auto-chip-id.txt` 里的 `MAC:`）；**同一根线**吗；插的是机箱后面还是前面板的 USB 口
 
 ## 8. 隐私
 

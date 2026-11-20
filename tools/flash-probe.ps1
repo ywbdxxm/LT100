@@ -103,7 +103,8 @@ Say "=== 2) auto download test (default reset, no button) ==="
 $autoLog = Join-Path $LogDir "auto-chip-id.txt"
 $autoOut = & $esptool --chip esp32 -p $Port -b 921600 -v --before default-reset chip-id 2>&1 | Out-String
 $autoOut | Out-File -Encoding utf8 $autoLog
-$autoOk = ($autoOut -match "Chip type:") -and ($autoOut -match "Chip is ESP32")
+# esptool v5 prints "Chip type: ESP32-..." (not "Chip is ESP32").
+$autoOk = ($autoOut -match "Chip type:\s*ESP32") -or ($autoOut -match "Chip is ESP32")
 if ($autoOk) {
     Say "RESULT: AUTO-OK -- esptool connected without pressing any button."
 } else {
