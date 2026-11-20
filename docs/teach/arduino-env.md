@@ -53,8 +53,8 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
    它默认读写 `%LOCALAPPDATA%\Arduino15`，与 IDE 共用同一套 core 和库。
    本包的 `Arduino15\arduino-cli.yaml` 已登记 ESP32 板卡索引地址。
 
-> 编译、烧录、`921600`、自动下载失败和手动 BOOT 的完整流程单独放在
-> [flashing.md](flashing.md)；本文件只讲环境安装与验证。
+> 编译、烧录、`921600`、自动下载与"必须手动按住 `KEY_FLASH`"两条路线的完整流程
+> 单独放在 [flashing.md](flashing.md)；本文件只讲环境安装与验证。
 
 ## 3. 验证
 
