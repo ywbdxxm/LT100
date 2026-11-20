@@ -275,6 +275,16 @@
                     <li><span class="file">05_oled_wave.ino</span><span class="what">开机画面 + 波形 + 运行秒数</span></li>
                   </ul>
                 </li>
+                <li><span class="dir">06_oled_warp/</span><span class="what">OLED：星际穿越</span>
+                  <ul>
+                    <li><span class="file">06_oled_warp.ino</span><span class="what">U8g2 3D 星点 + 近处拖尾</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">07_oled_cube/</span><span class="what">OLED：旋转立方体</span>
+                  <ul>
+                    <li><span class="file">07_oled_cube.ino</span><span class="what">U8g2 线框立方体 + 透视旋转</span></li>
+                  </ul>
+                </li>
               </ul>
             </li>
             <li><span class="dir">resources/</span>
@@ -350,7 +360,8 @@
           <li><b>ESP32 开发板支持包</b> <code>esp32 by Espressif Systems</code>（4.0.0）—— xtensa 编译器、烧录工具和 ESP32 底层库；没有它，IDE 里选不到这块板。</li>
           <li><b>SCServo</b>（IDE 库名 <code>SCSservo</code>）—— 飞特 ST3215 总线舵机控制库。</li>
           <li><b>Adafruit NeoPixel</b> —— 板载 2 颗加外接 24 颗 WS2812 灯。</li>
-          <li><b>Adafruit SSD1306 + GFX + BusIO</b> —— 板载 0.91 寸 OLED（I2C，0x3C）。</li>
+          <li><b>Adafruit SSD1306 + GFX + BusIO</b> —— 板载 0.91 寸 OLED 的基础驱动（I2C，0x3C）。</li>
+          <li><b>U8g2</b> —— 同一块 OLED 的图形库，06/07 例程用它画星场和线框。</li>
         </ul>
         <p>课程直接给装好的离线包：<code>resources\arduino-offline\</code>（约 2 GB）。整个拷到电脑上，关闭 IDE 后，把里面两个文件夹复制到当前用户：</p>
         <ul>
@@ -361,7 +372,7 @@
         <p><b>验证：</b>打开 IDE，确认两项：</p>
         <ul>
           <li><code>Tools → Board</code> 里出现 <b>ESP32 Dev Module</b>；</li>
-          <li><code>File → Examples</code> 里出现 <b>SCSservo</b>（舵机库）。</li>
+          <li><code>File → Examples</code> 里出现 <b>SCSservo</b>、<b>Adafruit SSD1306</b>、<b>U8g2</b>。</li>
         </ul>
         <p><b>范围：</b>这份包只覆盖经典 ESP32（ESP32 Dev Module / ESP32-WROOM-32），只带它的编译器，体积才能压到约 2 GB。其他型号（S3、C3、C6 等）不在包里，选了会编译失败。</p>
 
@@ -613,7 +624,7 @@
 
   <section id="oled">
     <h2><span class="n">下一步</span>屏幕：0.91" OLED</h2>
-    <p class="sub">板载一块 128×32 的黑白小屏，接线已经做好。这一节先让它显示一条滚动波浪线，再讲清楚它是怎么亮起来的。</p>
+    <p class="sub">板载一块 128×32 的黑白小屏，接线已经做好。这一节先用 Adafruit 库显示滚动波浪线，再用 U8g2 做两个独立效果：星际穿越和旋转立方体，最后讲清楚它是怎么亮起来的。</p>
 
     <div class="two">
       <div class="box">
@@ -698,6 +709,7 @@
       <div class="box">
         <h3>代码里发生了什么</h3>
         <p><code>drawPixel</code> 只是在内存里的图上涂一个点；<code>display()</code> 才把整张图发给屏幕。</p>
+        <p>U8g2 的写法一样：<code>clearBuffer()</code> 清空内存里的图，画完再 <code>sendBuffer()</code> 整张发给屏幕。</p>
         <p>就像先在纸上画好，再整张递给屏幕。</p>
       </div>
     </div>
@@ -746,6 +758,19 @@
       <h3>例程：滚动正弦波</h3>
       <p>打开 <code>examples\05_oled_wave\05_oled_wave.ino</code>。先显示「LT100」开机画面，再显示一条滚动的波浪线和运行秒数。</p>
       <p class="res"><a href="../examples/05_oled_wave/05_oled_wave.ino">examples\05_oled_wave\05_oled_wave.ino</a></p>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>进阶：两个 U8g2 例程</h3>
+      <p>U8g2 已经放进离线包的 <code>user-libraries\U8g2</code>，不用联网装。下面两个例程互相独立，烧哪个看哪个；启动时先显示约 0.9 秒标题卡，再进入动画。</p>
+
+      <p><b>06_oled_warp · 星际穿越</b>：58 颗星点各带 x / y / z 三个坐标，z 不断减小；屏幕位置按 <code>x/z</code>、<code>y/z</code> 投影。z 越小，星点越靠外，看起来就是朝你飞过来；近处的星再画一条到上一帧的短线，形成拖尾。</p>
+      <p class="res"><a href="../examples/06_oled_warp/06_oled_warp.ino">examples\06_oled_warp\06_oled_warp.ino</a></p>
+
+      <p style="margin-top:12px"><b>07_oled_cube · 旋转立方体</b>：立方体有 8 个顶点、12 条棱；先绕 Y 轴转，再绕 X 轴转。每个顶点按 <code>1/(2.4+z*0.35)</code> 做透视缩放，近大远小，最后把 12 条棱连起来；一个亮点跟着顶点转。</p>
+      <p class="res"><a href="../examples/07_oled_cube/07_oled_cube.ino">examples\07_oled_cube\07_oled_cube.ino</a></p>
+
+      <p>两个例程都把灯环调成低亮度环境光。为什么用 U8g2：它就是给这类单色屏做的，字体、线框、圆都有现成函数；LVGL 那类完整 GUI 框架更适合彩色触屏。代码开头 <code>U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C oled(..., 22, 21)</code> 就是在选屏幕型号并指定 SCL=22、SDA=21；<code>setBusClock(400000)</code> 把 I2C 提到 400 kHz，动画才够流畅。</p>
     </div>
   </section>
   <footer>

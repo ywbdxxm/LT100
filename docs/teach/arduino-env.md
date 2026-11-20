@@ -11,7 +11,7 @@
 | `arduino-ide_2.3.11_Windows_64bit.exe` | Arduino IDE 官方安装包 | 153 MB |
 | `CP210x_Universal_Windows_Driver/` | CP210x 串口驱动（已解压，认不到 COM 口时用） | 4.7 MB |
 | `arduino-cli/` | arduino-cli 1.6.0，解压即用 | 40 MB |
-| `arduino-offline/` | ESP32 core 4.0.0 + 工具链 + 课程库（学生机用这个） | 约 2 GB |
+| `arduino-offline/` | ESP32 core 4.0.0 + 工具链 + 课程库（含 U8g2，学生机用这个） | 约 2 GB |
 
 主控板的 USB 转串口是 CP2102；Windows 10/11 通常自带驱动，先看设备管理器再决定装不装。
 
@@ -25,6 +25,7 @@
 | `Adafruit SSD1306` | 2.5.17 | 0.91 寸 OLED（I2C，0x3C） |
 | `Adafruit GFX Library` | 1.13.0 | SSD1306 的图形依赖 |
 | `Adafruit BusIO` | 1.17.4 | SSD1306 的 I2C 依赖 |
+| `U8g2` | 2.36.19 | 单色 OLED 图形库；06/07 例程的星场与立方体 |
 
 ## 2. 安装步骤
 
@@ -51,7 +52,7 @@
 
 ## 3. 验证
 
-- **IDE**：`Tools → Board` 里出现 **ESP32 Dev Module**；`File → Examples` 里出现 **SCSservo**（SCServo 舵机库）。
+- **IDE**：`Tools → Board` 里出现 **ESP32 Dev Module**；`File → Examples` 里出现 **SCSservo**、**Adafruit SSD1306**、**U8g2**。
 - **CLI**（在 `resources\arduino-cli\` 目录）：
 
   ```powershell
@@ -92,6 +93,12 @@
   （`arduino-cli 1.6.0`，`esp32:esp32:esp32`，292329 B / 22% flash，23248 B RAM，exit 0）。
   同一编译也用 **Arduino IDE 2.3.11 自带的 arduino-cli**（版本同为 1.6.0）复跑通过，
   `core list`、`board listall`、`board details` 均正常。
+- 2026-11-21 用同一套离线库编译并烧录 `examples/06_oled_warp`（U8g2 星际穿越）
+  通过：355703 B / 27% flash，26676 B RAM / 8%，COM4 上传哈希校验通过。
+- 2026-11-21 同法编译并烧录 `examples/07_oled_cube`（U8g2 旋转立方体）
+  通过：349992 B / 26% flash，25532 B RAM / 7%，COM4 上传哈希校验通过。
+- U8g2 源码目录 47.8 MB，主要是全部字体表；Arduino 编译时只链接实际引用的驱动与字体，
+  所以离线包变大，但固件不会把整套字体都装进去。
 
 ## 6. 排错
 
