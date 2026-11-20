@@ -1,6 +1,13 @@
 # local scratch / analysis artifacts
 .local/
+.impeccable/
 _crop_*.png
+
+# course distribution payload (installers / offline package, ~2 GB)
+resources/
+
+# editor / temporary backups
+*.bak
 
 # firmware / build output
 build/

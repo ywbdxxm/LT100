@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LT100 · 主控板</title>
+<meta name="description" content="LT100 三轴机械臂台灯的主控板：微雪 Servo Driver with ESP32——接口、参数与项目资料位置。">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#faf8f5">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b23c07'/%3E%3Ccircle cx='16' cy='12' r='5' fill='%23fff'/%3E%3Crect x='10' y='20' width='12' height='3' rx='1.5' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=7">
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <span class="brand">LT100</span>
+    <a href="#board">主控板</a>
+    <a href="#dev">开发</a>
+    <a href="#led-principle">原理</a>
+    <a href="#first-sketch">实战</a>
+    <a href="#oled">屏幕</a>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">LT100 · 01 主控板</div>
+        <h1>微雪 Servo Driver with ESP32</h1>
+        <p class="lead">LT100 的大脑，也是电源中枢。ESP32-WROOM-32、1Mbps 舵机总线、0.91 英寸 OLED 和 WS2812 灯控都长在这一块 65×30mm 的板子上——接上 12V 和舵机就能开工，不画板、不焊线。</p>
+      </div>
+      <figure class="hero-photo">
+        <img src="assets/board-1.jpg" alt="微雪 Servo Driver with ESP32 主控板正面斜视图" width="800" height="800" decoding="async">
+      </figure>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b>2</b><span>3P 总线口（并联）</span></div>
+      <div class="kpi"><b>1.25mm</b><span>3P 灯扩展口</span></div>
+      <div class="kpi"><b>0.91"</b><span>OLED 状态屏</span></div>
+      <div class="kpi"><b>65×30</b><span>mm，孔距 58×23</span></div>
+    </div>
+  </header>
+
+  <section id="board">
+    <h2><span class="n">认板</span>正面与背面</h2>
+    <p class="sub">官方图，编号对应下面的说明。先认接口，再接线就不会拿错口。</p>
+
+    <figure class="view">
+      <div class="ph">
+        <img src="assets/board-3.jpg" alt="主控板正面：左侧 DC 电源口和两个 3P 舵机口，中间 OLED，右侧 USB-C 与 EN、BOOT 按键" width="800" height="800" loading="lazy" decoding="async">
+        <span class="pin" style="--x:12.8;--y:45" aria-hidden="true">1</span>
+        <span class="pin" style="--x:29;--y:73" aria-hidden="true">2</span>
+        <span class="pin" style="--x:79;--y:76.8" aria-hidden="true">3</span>
+        <span class="pin" style="--x:57.8;--y:28" aria-hidden="true">4</span>
+        <span class="pin" style="--x:48.8;--y:76.3" aria-hidden="true">5</span>
+        <span class="pin" style="--x:90.3;--y:46.3" aria-hidden="true">6</span>
+      </div>
+      <figcaption>正面 · 所有接口都在这一面</figcaption>
+      <ol class="legend cols">
+        <li><span class="num">1</span><div><b>DC 6–12V 电源口</b><p>5.5×2.1 圆孔。电压原样送到舵机母线，电源电压必须和舵机一致——LT100 用 12V。</p></div></li>
+        <li><span class="num">2</span><div><b>3P 舵机口 ×2</b><p>丝印 S / V / G，两个口内部并联。三只 ST3215 串在同一条总线上，接哪个口都行。</p></div></li>
+        <li><span class="num">3</span><div><b>USB-C</b><p>烧录和串口调试（115200）。不给舵机供电——只插 USB 时舵机不动是正常的。</p></div></li>
+        <li><span class="num">4</span><div><b>0.91" OLED</b><p>开机三行：MAC 地址、电压 + IP、工作模式；扫描时还显示舵机数量和当前位置。</p></div></li>
+        <li><span class="num">5</span><div><b>板载 WS2812 ×2</b><p>状态灯：蓝 = 连 Wi-Fi，浅绿 = 扫描舵机，扫完熄灭。和灯环共用 GPIO23，编号 0、1。</p></div></li>
+        <li><span class="num">6</span><div><b>EN / BOOT 按键</b><p>复位和下载。板子带自动下载电路，正常烧录不用手按。</p></div></li>
+      </ol>
+    </figure>
+
+    <figure class="view">
+      <div class="ph">
+        <img src="assets/board-4.jpg" alt="主控板背面：左侧 PH1.25 3P 灯扩展口，中间 ESP32-WROOM-32 模组" width="800" height="800" loading="lazy" decoding="async">
+        <span class="pin" style="--x:11.3;--y:46.3" aria-hidden="true">7</span>
+        <span class="pin" style="--x:49.4;--y:50" aria-hidden="true">8</span>
+      </div>
+      <figcaption>背面 · 核心模组和灯口</figcaption>
+      <ol class="legend cols2">
+        <li><span class="num">7</span><div><b>1.25mm 3P 灯扩展口</b><p>板上丝印 PH1.25，实际配 1.25mm 3P 插头；针脚 5V / GND / OUT，OUT 接灯环的 DIN。5V 从板载取，LT100 按约 1A 预算，灯环限 40% 亮度（约 0.6A）。</p></div></li>
+        <li><span class="num">8</span><div><b>ESP32-WROOM-32</b><p>双核 240MHz，Wi-Fi + 蓝牙 + ESP-NOW。板载天线在模组顶端，装机时让这一端朝外，别贴金属。</p></div></li>
+      </ol>
+    </figure>
+  </section>
+
+  <section id="schematic">
+    <h2><span class="n">原理图</span>和实物对照看</h2>
+    <p class="sub">编号沿用上面的实物图。先看整页，再按编号看细节——每张卡片一边是板上的位置，一边是原理图里对应的那一块。</p>
+
+    <figure class="view schematic">
+      <div class="ph">
+        <button class="zoom-open" type="button" aria-label="放大整页原理图">
+          <img src="assets/board-schematic-full.png" alt="整板原理图整页，编号对应下面的对照卡" width="3368" height="2380" loading="lazy" decoding="async">
+        </button>
+        <span class="pin" style="--x:18.8;--y:17" aria-hidden="true">1</span>
+        <span class="pin" style="--x:32.7;--y:54.8" aria-hidden="true">2</span>
+        <span class="pin" style="--x:8.2;--y:86.5" aria-hidden="true">2</span>
+        <span class="pin" style="--x:48;--y:30" aria-hidden="true">3</span>
+        <span class="pin" style="--x:82;--y:59" aria-hidden="true">4</span>
+        <span class="pin" style="--x:46.5;--y:82" aria-hidden="true">5</span>
+        <span class="pin" style="--x:66.7;--y:27" aria-hidden="true">6</span>
+        <span class="pin" style="--x:29;--y:80" aria-hidden="true">7</span>
+        <span class="pin" style="--x:86.5;--y:26" aria-hidden="true">8</span>
+      </div>
+      <figcaption>整页原理图 · 点图放大 · <a href="../docs/reference/board/servo-driver-esp32-board-schematic.pdf" target="_blank" rel="noopener">打开 PDF</a></figcaption>
+    </figure>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">1</span><b>电源</b><span class="tag">实物 1 号 · DC 6–12V 口</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair1-board.jpg" alt="实物：DC 电源口" width="270" height="190" loading="lazy" decoding="async"><figcaption>实物 · DC 6–12V 口</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair1-sch.png" alt="原理图：电源部分" width="1184" height="984" loading="lazy" decoding="async"></button><figcaption>原理图 · 6–12V → 5V → 3.3V</figcaption></figure>
+      </div>
+      <p>6–12V 从 DC 口进，U5 开关电源降到 5V，AMS1117-3.3 再出 3.3V；USB 的 5V 经二极管并到 5V 轨，只供板载逻辑和灯。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">2</span><b>舵机总线</b><span class="tag">实物 2 号 · 3P 口</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair2-board.jpg" alt="实物：两个 3P 舵机口" width="260" height="300" loading="lazy" decoding="async"><figcaption>实物 · 两个并联的 3P 口</figcaption></figure>
+        <div class="stack">
+          <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair2-sch.png" alt="原理图：收发缓冲" width="1392" height="600" loading="lazy" decoding="async"></button><figcaption>原理图 · 收发缓冲</figcaption></figure>
+          <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair2b-sch.png" alt="原理图：并联的两个 3P 口" width="864" height="328" loading="lazy" decoding="async"></button><figcaption>原理图 · 并联的 H2 / H3</figcaption></figure>
+        </div>
+      </div>
+      <p>SN74LVC1G126 负责发、SN74LVC1G125 负责收，TXEN 切方向，把 UART 合成一根半双工 DATA；H2、H3 完全并联，VCC 直连 6–12V——插 USB 舵机不动就是这个原因。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">3</span><b>USB 与下载</b><span class="tag">实物 3 号 · USB-C</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair3-board.jpg" alt="实物：USB-C 口" width="180" height="180" loading="lazy" decoding="async"><figcaption>实物 · USB-C</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair3-sch.png" alt="原理图：CP2102 与自动下载电路" width="1016" height="980" loading="lazy" decoding="async"></button><figcaption>原理图 · CP2102 + 自动下载</figcaption></figure>
+      </div>
+      <p>CP2102 做 USB↔串口；DTR / RTS 经两个 S8050 拉 EN 和 IO0，烧录时自动进下载模式——所以 6 号两个按键平时不用按。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">4</span><b>屏幕</b><span class="tag">实物 4 号 · OLED</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair4-board.jpg" alt="实物：0.91 英寸 OLED" width="380" height="275" loading="lazy" decoding="async"><figcaption>实物 · 0.91" OLED</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair4-sch.png" alt="原理图：SSD1306 OLED" width="1096" height="792" loading="lazy" decoding="async"></button><figcaption>原理图 · SSD1306，I2C</figcaption></figure>
+      </div>
+      <p>0.91" 128×32，SSD1306，I2C 两根线（4.7K 上拉），3.3V 供电；开机那三行字就显示在这。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">5</span><b>板载灯</b><span class="tag">实物 5 号 · WS2812 ×2</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair5-board.jpg" alt="实物：两颗板载 WS2812" width="240" height="110" loading="lazy" decoding="async"><figcaption>实物 · 两颗板载灯</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair5-sch.png" alt="原理图：WS2812 灯链" width="940" height="280" loading="lazy" decoding="async"></button><figcaption>原理图 · WS2812 链</figcaption></figure>
+      </div>
+      <p>IO23 进第一颗 WS2812，两颗串联，显示开机、扫描和故障状态。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">6</span><b>按键</b><span class="tag">实物 6 号 · EN / BOOT</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair6-board.jpg" alt="实物：EN 和 BOOT 按键" width="190" height="190" loading="lazy" decoding="async"><figcaption>实物 · EN / BOOT</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair6-sch.png" alt="原理图：KEY_RST/USER 与 KEY_FLASH 按键" width="464" height="440" loading="lazy" decoding="async"></button><figcaption>原理图 · KEY_RST/USER、KEY_FLASH</figcaption></figure>
+      </div>
+      <p>一颗复位（KEY_RST/USER，接 EN），一颗进下载（KEY_FLASH，接 IO0）；平时由自动下载电路接管，只有强制下载时才需要手按。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">7</span><b>灯口</b><span class="tag">实物 7 号 · 1.25mm 3P</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair7-board.jpg" alt="实物：1.25mm 3P 灯扩展口" width="110" height="120" loading="lazy" decoding="async"><figcaption>实物 · 1.25mm 3P 口</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair7-sch.png" alt="原理图：H1 灯口" width="608" height="472" loading="lazy" decoding="async"></button><figcaption>原理图 · H1</figcaption></figure>
+      </div>
+      <p>H1 是板上的 1.25mm 3P 灯口，三个脚：5V / GND / LED-OUT。LED-OUT 是灯链末端，接灯环的 DIN——所以灯环在固件里接在板载两颗之后。</p>
+    </div>
+
+    <div class="pair">
+      <div class="pair-head"><span class="num">8</span><b>主控模组</b><span class="tag">实物 8 号 · ESP32</span></div>
+      <div class="pair-imgs">
+        <figure><img src="assets/pair8-board.jpg" alt="实物：ESP32-WROOM-32 模组" width="340" height="320" loading="lazy" decoding="async"><figcaption>实物 · ESP32-WROOM-32</figcaption></figure>
+        <figure><button class="zoom-open" type="button" aria-label="放大整页原理图"><img src="assets/pair8-sch.png" alt="原理图：ESP32 模组引脚" width="1008" height="960" loading="lazy" decoding="async"></button><figcaption>原理图 · 模组引脚</figcaption></figure>
+      </div>
+      <p>模组引脚全部扇出：IO19 / IO18 去舵机串口，IO21 / IO22 去屏，IO23 去灯；板载天线在模组顶端。</p>
+    </div>
+
+  </section>
+
+  <section>
+    <h2><span class="n">参数</span>板子本身</h2>
+    <table>
+      <tbody>
+        <tr><th>主控</th><td>ESP32-WROOM-32，双核 240MHz，Wi-Fi / 蓝牙 / ESP-NOW</td></tr>
+        <tr><th>供电</th><td>DC 6–12V（5.5×2.1），直接供舵机母线；USB-C 只做烧录和调试</td></tr>
+        <tr><th>舵机总线</th><td>UART 1Mbps，GPIO18 = RX、GPIO19 = TX；一条总线最多 253 个 ID</td></tr>
+        <tr><th>屏幕</th><td>0.91" OLED，I2C（GPIO21 = SDA、GPIO22 = SCL），地址 0x3C</td></tr>
+        <tr><th>灯控</th><td>GPIO23；2 颗板载 WS2812 + 1.25mm 3P 扩展口（5V / GND / OUT，丝印 PH1.25）</td></tr>
+        <tr><th>烧录</th><td>Arduino IDE 选 <b>ESP32 Dev Module</b>，上传 921600；板载自动下载电路</td></tr>
+        <tr><th>尺寸</th><td>65 × 30 mm；安装孔 Ø2.75，孔距 58 × 23 mm</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">资料</span>主控相关文件都在哪</h2>
+    <p class="sub">项目里跟主控板有关的原件、文档和课程资源，按目录排。微雪原件都来自 <a href="https://www.waveshare.net/wiki/Servo_Driver_with_ESP32" target="_blank" rel="noopener">官方 wiki</a>；<code>reference/</code> 里的文件只读——不改名、不编辑。</p>
+    <div class="tree-card">
+      <ul class="tree">
+        <li><span class="dir">LT100/</span>
+          <ul>
+            <li><span class="dir">docs/</span>
+              <ul>
+                <li><span class="dir">design/</span>
+                  <ul>
+                    <li><span class="file">design.md</span><span class="what">设计与规格：定位、架构、硬件契约</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">build/</span>
+                  <ul>
+                    <li><span class="file">bom.md</span><span class="what">BOM、接线、选购与到货检查</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">teach/</span>
+                  <ul>
+                    <li><span class="file">course-4h.md</span><span class="what">四小时课：硬件装配线 / AI Agent 线</span></li>
+                    <li><span class="file">arduino-env.md</span><span class="what">学生机离线环境：安装、验证、agent 执行说明</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">reference/</span>
+                  <ul>
+                    <li><span class="file">README.md</span><span class="what">资料台账：来源、大小、SHA-256</span></li>
+                    <li><span class="dir">board/</span><span class="what">微雪官方原件</span>
+                      <ul>
+                        <li><span class="file">servo-driver-esp32-user-manual-cn.pdf</span><span class="what">官方中文手册：接线、Web UI、例程步骤</span></li>
+                        <li><span class="file">servo-driver-esp32-board-schematic.pdf</span><span class="what">整板原理图：电源、USB、ESP32、OLED、灯、舵机驱动</span></li>
+                        <li><span class="file">bus-servo-driver-schematic.pdf</span><span class="what">舵机驱动子图：TX/RX 缓冲与 5264 接口</span></li>
+                        <li><span class="file">servo-driver-esp32-step.zip</span><span class="what">STEP 3D 模型：结构设计预留空间</span></li>
+                        <li><span class="file">factory-firmware-st.rar</span><span class="what">ST 版出厂固件：刷回原厂 Web UI</span></li>
+                        <li><span class="file">factory-firmware-sc.rar</span><span class="what">SC 版出厂固件：对照 / 备用</span></li>
+                        <li><span class="file">cp210x-usb-uart-driver.zip</span><span class="what">USB 串口驱动：认不到 COM 口时用</span></li>
+                      </ul>
+                    </li>
+                    <li><span class="dir">software/</span><span class="what">官方例程与库</span>
+                      <ul>
+                        <li><span class="file">st-servo-examples.zip</span><span class="what">ST 系列 Arduino 例程：Ping / 写位置 / 同步写</span></li>
+                        <li><span class="file">sc-servo-examples.zip</span><span class="what">SC 系列例程：对照 ST / SC 差异</span></li>
+                        <li><span class="file">scstservo-library.zip</span><span class="what">Arduino 库：SCServo / STServo 协议实现</span></li>
+                        <li><span class="file">stservo-python.zip</span><span class="what">Python 库：树莓派 / PC 上位机控制</span></li>
+                      </ul>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+            <li><span class="dir">examples/</span>
+              <ul>
+                <li><span class="dir">01_blink_rgb/</span><span class="what">第一个例程：板载 RGB 闪烁</span>
+                  <ul>
+                    <li><span class="file">01_blink_rgb.ino</span><span class="what">GPIO23 红蓝交替，先确认编译烧录链路</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">02_rainbow_breathe/</span><span class="what">进阶：双灯呼吸彩虹</span>
+                  <ul>
+                    <li><span class="file">02_rainbow_breathe.ino</span><span class="what">互补色相 + 正弦呼吸</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">03_ring_show/</span><span class="what">接灯环：彩虹彗星 + 流光</span>
+                  <ul>
+                    <li><span class="file">03_ring_show.ino</span><span class="what">26 颗灯链，两种效果每 8 秒切换</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">04_dual_ring_show/</span><span class="what">两环灯光秀</span>
+                  <ul>
+                    <li><span class="file">04_dual_ring_show.ino</span><span class="what">双彗星 / 反向旋涡 / 能量脉冲，50 颗</span></li>
+                  </ul>
+                </li>
+                <li><span class="dir">05_oled_wave/</span><span class="what">OLED：滚动正弦波</span>
+                  <ul>
+                    <li><span class="file">05_oled_wave.ino</span><span class="what">开机画面 + 波形 + 运行秒数</span></li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+            <li><span class="dir">resources/</span>
+              <ul>
+                <li><span class="file">arduino-ide_2.3.11_Windows_64bit.exe</span><span class="what">Arduino IDE 安装包</span></li>
+                <li><span class="dir">CP210x_Universal_Windows_Driver/</span><span class="what">串口驱动（已解压）</span></li>
+                <li><span class="dir">arduino-cli/</span><span class="what">命令行工具，免安装</span></li>
+                <li><span class="dir">arduino-offline/</span><span class="what">离线 ESP32 支持包 + 课程库（约 2 GB）</span></li>
+              </ul>
+            </li>
+            <li><span class="dir">web/</span>
+              <ul>
+                <li><span class="dir">assets/</span>
+                  <ul>
+                    <li><span class="file">board-*.jpg</span><span class="what">官网产品图，本页配图</span></li>
+                  </ul>
+                </li>
+              </ul>
+            </li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="dev">
+    <h2><span class="n">开发</span>装环境：IDE、驱动、支持包</h2>
+    <p class="sub">安装包、驱动和离线支持包都在项目的 <code>resources/</code> 里，拷到电脑上即可安装。以后课程用的工具也统一放这个文件夹。</p>
+    <p class="note"><b>注意：</b>后面烧录例程会覆盖出厂 Web UI 固件；原厂固件已存档在 <a href="../docs/reference/board/factory-firmware-st.rar">factory-firmware-st.rar</a>，需要时可按微雪手册刷回。</p>
+
+    <div class="dev-step">
+      <div class="n">1</div>
+      <div>
+        <h3>安装 Arduino IDE 2.3.11</h3>
+        <p>双击运行，一路默认选项。装完先不用打开；等第 2 步的驱动和第 4 步的支持包都就位，再打开 IDE。</p>
+        <p class="res"><a href="../resources/arduino-ide_2.3.11_Windows_64bit.exe">resources\arduino-ide_2.3.11_Windows_64bit.exe</a> · 153 MB</p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">2</div>
+      <div>
+        <h3>插上板子，检查串口驱动</h3>
+        <p>用能传数据的 USB-C 线连接板子和电脑（只能充电的线不行），打开「设备管理器」→「端口 (COM 和 LPT)」：</p>
+        <ul>
+          <li><b>看到</b> <code>Silicon Labs CP210x USB to UART Bridge (COMx)</code>：驱动已就绪，跳过安装。</li>
+          <li><b>看不到</b>，或设备图标带黄色感叹号：装下面的驱动。</li>
+        </ul>
+        <p>装法：打开 <code>resources\CP210x_Universal_Windows_Driver\</code>，右键 <code>silabser.inf</code> → 安装（Win11 没看到「安装」时，点「显示更多选项」）；或者在设备管理器里右键黄色设备 → 更新驱动程序 → 浏览到这个文件夹。装完拔插一次再看端口。</p>
+        <p class="res"><a href="../resources/CP210x_Universal_Windows_Driver/">resources\CP210x_Universal_Windows_Driver\</a>（已解压）</p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">3</div>
+      <div>
+        <h3>arduino-cli（免安装，可选）</h3>
+        <p>命令行版的 Arduino，用来编译、烧录、批量装库；和 IDE 共用同一套 core 和库。课程用 IDE 就够，装它是为了方便脚本和 AI agent。</p>
+        <p>它不用安装：exe 已经在 <code>resources\arduino-cli\</code>，拷走就能用。</p>
+        <p><b>验证：</b>打开这个文件夹，在地址栏输入 <code>powershell</code> 回车（会在当前目录打开 PowerShell），执行：</p>
+        <pre><code>.\arduino-cli.exe version</code></pre>
+        <p>看到 <code>arduino-cli Version: 1.6.0 …</code> 就说明能用了。配置不用改：离线包里已经带好。</p>
+        <p class="res"><a href="../resources/arduino-cli/">resources\arduino-cli\</a> · 免安装</p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">4</div>
+      <div>
+        <h3>装 ESP32 支持包和课程库</h3>
+        <p>Arduino IDE 本身只带 AVR 板卡。要让 IDE 认识并编译这块板，官方流程需要下面这些组件：</p>
+        <ul>
+          <li><b>ESP32 开发板支持包</b> <code>esp32 by Espressif Systems</code>（4.0.0）—— xtensa 编译器、烧录工具和 ESP32 底层库；没有它，IDE 里选不到这块板。</li>
+          <li><b>SCServo</b>（IDE 库名 <code>SCSservo</code>）—— 飞特 ST3215 总线舵机控制库。</li>
+          <li><b>Adafruit NeoPixel</b> —— 板载 2 颗加外接 24 颗 WS2812 灯。</li>
+          <li><b>Adafruit SSD1306 + GFX + BusIO</b> —— 板载 0.91 寸 OLED（I2C，0x3C）。</li>
+        </ul>
+        <p>课程直接给装好的离线包：<code>resources\arduino-offline\</code>（约 2 GB）。整个拷到电脑上，关闭 IDE 后，把里面两个文件夹复制到当前用户：</p>
+        <ul>
+          <li><code>Arduino15\</code> → <code>%LOCALAPPDATA%\Arduino15</code></li>
+          <li><code>user-libraries\</code> → <code>%USERPROFILE%\Documents\Arduino\libraries</code></li>
+        </ul>
+        <p>目标已存在就合并。学生机上有 AI agent 的，把这两条路径和包里的 <code>README.txt</code> 交给它，复制并验证即可。</p>
+        <p><b>验证：</b>打开 IDE，确认两项：</p>
+        <ul>
+          <li><code>Tools → Board</code> 里出现 <b>ESP32 Dev Module</b>；</li>
+          <li><code>File → Examples</code> 里出现 <b>SCSservo</b>（舵机库）。</li>
+        </ul>
+        <p><b>范围：</b>这份包只覆盖经典 ESP32（ESP32 Dev Module / ESP32-WROOM-32），只带它的编译器，体积才能压到约 2 GB。其他型号（S3、C3、C6 等）不在包里，选了会编译失败。</p>
+
+        <p class="res"><a href="../resources/arduino-offline/">resources\arduino-offline\</a> · 离线包（core + 工具链 + 库，约 2 GB）</p>
+      </div>
+    </div>
+
+    <p class="sub" style="margin:14px 0 0">四步做完，IDE 里能选板、能打开课程库，就可以烧第一个例程了。</p>
+  </section>
+
+
+  <section id="led-principle">
+    <h2><span class="n">原理</span>WS2812 灯链：一颗串一颗</h2>
+    <p class="sub">先看懂灯怎么收颜色、怎么往下传，再烧例程。板载 2 颗和外接灯环共用 GPIO23。</p>
+
+    <div class="box led">
+      <p>每颗 WS2812 把控制 IC 和红绿蓝三个发光二极管封在一个 5×5mm 的壳里，只有 4 个脚：VDD、GND、DIN、DOUT。数据从 DIN 进、DOUT 出，所以能一颗串一颗。</p>
+
+      <div class="led-figs">
+        <figure>
+          <img src="assets/pair5-board.jpg" alt="板载两颗 WS2812" width="240" height="110" loading="lazy" decoding="async">
+          <figcaption>实物：板载 2 颗，编号 0、1</figcaption>
+        </figure>
+        <figure>
+          <svg viewBox="0 0 520 150" role="img" aria-label="灯链：GPIO23 到板载两颗再到灯环">
+            <defs>
+              <marker id="led-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#5f5952"></path>
+              </marker>
+            </defs>
+            <text x="8" y="76" font-family="Consolas,monospace" font-size="16" fill="#5f5952">GPIO23</text>
+            <line x1="62" y1="70" x2="86" y2="70" stroke="#5f5952" stroke-width="1.5" marker-end="url(#led-arrow)"></line>
+            <rect x="90" y="40" width="100" height="60" rx="8" fill="#fdeee3" stroke="#b23c07" stroke-width="1.5"></rect>
+            <text x="140" y="67" text-anchor="middle" font-size="18" font-weight="600" fill="#1c1917">板载 0</text>
+            <text x="140" y="87" text-anchor="middle" font-size="12" fill="#5f5952">WS2812</text>
+            <line x1="192" y1="70" x2="226" y2="70" stroke="#5f5952" stroke-width="1.5" marker-end="url(#led-arrow)"></line>
+            <rect x="230" y="40" width="100" height="60" rx="8" fill="#fdeee3" stroke="#b23c07" stroke-width="1.5"></rect>
+            <text x="280" y="67" text-anchor="middle" font-size="18" font-weight="600" fill="#1c1917">板载 1</text>
+            <text x="280" y="87" text-anchor="middle" font-size="12" fill="#5f5952">WS2812</text>
+            <line x1="332" y1="70" x2="366" y2="70" stroke="#5f5952" stroke-width="1.5" marker-end="url(#led-arrow)"></line>
+            <rect x="370" y="50" width="56" height="40" rx="6" fill="#f5f1ea" stroke="#b9b1a6" stroke-width="1.5"></rect>
+            <text x="398" y="68" text-anchor="middle" font-size="17" font-weight="600" fill="#1c1917">H1</text>
+            <text x="398" y="84" text-anchor="middle" font-size="11" fill="#5f5952">灯口</text>
+            <line x1="428" y1="70" x2="444" y2="70" stroke="#5f5952" stroke-width="1.5" marker-end="url(#led-arrow)"></line>
+            <rect x="448" y="30" width="66" height="80" rx="8" fill="#f5f1ea" stroke="#b9b1a6" stroke-width="1.5" stroke-dasharray="4 3"></rect>
+            <text x="481" y="66" text-anchor="middle" font-size="17" font-weight="600" fill="#1c1917">灯环</text>
+            <text x="481" y="86" text-anchor="middle" font-size="13" fill="#5f5952">2–25</text>
+            <text x="90" y="132" font-size="12.5" fill="#5f5952">5V / GND 并联到每颗；数据只走一根线</text>
+          </svg>
+          <figcaption>灯链：GPIO23 → 板载 0 → 板载 1 → H1 灯口 → 灯环 2–25</figcaption>
+        </figure>
+      </div>
+
+      <p>一颗灯要 24 个脉冲：8 个给绿、8 个给红、8 个给蓝。每个脉冲都是一次高电平——高得短是 0，高得长是 1；8 个脉冲拼成一个 0–255 的数，就是这一路的亮度。</p>
+
+      <figure class="led-bit">
+        <svg viewBox="0 0 760 160" role="img" aria-label="0 和 1 的脉冲：短高是 0，长高是 1">
+          <text x="40" y="20" font-size="12" fill="#5f5952">一位 1.25µs：高电平短 = 0，高电平长 = 1</text>
+          <text x="40" y="42" font-size="12" fill="#1c1917">0</text>
+          <path d="M60 60 H100 V40 H116 V60 H240" stroke="#b23c07" stroke-width="2" fill="none"></path>
+          <text x="108" y="30" text-anchor="middle" font-size="11" fill="#b23c07">高 0.4µs</text>
+          <text x="178" y="80" text-anchor="middle" font-size="10.5" fill="#5f5952">低 0.85µs</text>
+          <text x="260" y="65" font-size="12" fill="#1c1917">→ 这一位是 0</text>
+          <text x="40" y="108" font-size="12" fill="#1c1917">1</text>
+          <path d="M60 125 H100 V105 H140 V125 H240" stroke="#b23c07" stroke-width="2" fill="none"></path>
+          <text x="120" y="95" text-anchor="middle" font-size="11" fill="#b23c07">高 0.8µs</text>
+          <text x="190" y="145" text-anchor="middle" font-size="10.5" fill="#5f5952">低 0.45µs</text>
+          <text x="260" y="130" font-size="12" fill="#1c1917">→ 这一位是 1</text>
+        </svg>
+        <figcaption>0 和 1 不是两个电平，而是同一个高电平的两种长度；接收端按高电平持续时间判断。</figcaption>
+      </figure>
+
+      <figure class="led-wave">
+        <svg viewBox="0 0 760 270" role="img" aria-label="LED0 发红、LED1 发蓝的具体脉冲波形">
+          <text x="50" y="22" font-size="13" font-weight="600" fill="#1c1917">LED0 → 橙 <tspan fill="#5f5952" font-weight="400">（R 210 · G 150 · B 75）</tspan></text>
+          <text x="710" y="22" text-anchor="end" font-size="11" fill="#5f5952">短高 = 0 · 长高 = 1</text>
+          <rect x="50" y="52" width="224" height="52" fill="#f4fbf6"></rect>
+          <rect x="274" y="52" width="224" height="52" fill="#fdf6f6"></rect>
+          <rect x="498" y="52" width="224" height="52" fill="#f5f9ff"></rect>
+          <text x="162" y="46" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#2f6b3d">G 10010110</text>
+          <text x="386" y="46" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#a33b3b">R 11010010</text>
+          <text x="610" y="46" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#355f9e">B 01001011</text>
+          <path d="M50 95V70H68V95H78M78 95V70H87V95H106M106 95V70H115V95H134M134 95V70H152V95H162M162 95V70H171V95H190M190 95V70H208V95H218M218 95V70H236V95H246M246 95V70H255V95H274M274 95V70H292V95H302M302 95V70H320V95H330M330 95V70H339V95H358M358 95V70H376V95H386M386 95V70H395V95H414M414 95V70H423V95H442M442 95V70H460V95H470M470 95V70H479V95H498M498 95V70H507V95H526M526 95V70H544V95H554M554 95V70H563V95H582M582 95V70H591V95H610M610 95V70H628V95H638M638 95V70H647V95H666M666 95V70H684V95H694M694 95V70H712V95H722" stroke="#b23c07" stroke-width="1.6" fill="none"></path>
+          <text x="162" y="118" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+          <text x="386" y="118" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+          <text x="610" y="118" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+          <text x="50" y="150" font-size="13" font-weight="600" fill="#1c1917">LED1 → 蓝 <tspan fill="#5f5952" font-weight="400">（R 45 · G 105 · B 180）</tspan></text>
+          <rect x="50" y="180" width="224" height="52" fill="#f4fbf6"></rect>
+          <rect x="274" y="180" width="224" height="52" fill="#fdf6f6"></rect>
+          <rect x="498" y="180" width="224" height="52" fill="#f5f9ff"></rect>
+          <text x="162" y="174" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#2f6b3d">G 01101001</text>
+          <text x="386" y="174" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#a33b3b">R 00101101</text>
+          <text x="610" y="174" text-anchor="middle" font-size="11" font-family="Consolas,monospace" fill="#355f9e">B 10110100</text>
+          <path d="M50 223V198H59V223H78M78 223V198H96V223H106M106 223V198H124V223H134M134 223V198H143V223H162M162 223V198H180V223H190M190 223V198H199V223H218M218 223V198H227V223H246M246 223V198H264V223H274M274 223V198H283V223H302M302 223V198H311V223H330M330 223V198H348V223H358M358 223V198H367V223H386M386 223V198H404V223H414M414 223V198H432V223H442M442 223V198H451V223H470M470 223V198H488V223H498M498 223V198H516V223H526M526 223V198H535V223H554M554 223V198H572V223H582M582 223V198H600V223H610M610 223V198H619V223H638M638 223V198H656V223H666M666 223V198H675V223H694M694 223V198H703V223H722" stroke="#b23c07" stroke-width="1.6" fill="none"></path>
+          <text x="162" y="246" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+          <text x="386" y="246" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+          <text x="610" y="246" text-anchor="middle" font-size="10.5" fill="#5f5952">4 长 4 短</text>
+        </svg>
+        <figcaption>每一位 1.25µs；短高约 0.4µs 表示 0，长高约 0.8µs 表示 1。这里每个 8 位都是 4 个 1、4 个 0。</figcaption>
+      </figure>
+
+      <p>每一路灯珠不是一直通电：IC 在一个很短的周期里把它打开一段时间、再关一段时间，然后重复。开的时间占得越多，这一路在颜色里占得越重；开关太快，眼睛看不到闪。</p>
+      <p>8 位数就是这一路「开的时间」档位：0 = 一直关，255 = 一直开，128 = 开一半。8 位不是 8 颗灯，是这一路的 256 档强度。</p>
+      <p><b>灯里没有单独的「亮度」参数</b>：只有 G/R/B 三个数。把三个数一起改小，得到的是另一个颜色值（更暗的颜色），不是同一个颜色加一个亮度档。</p>
+
+      <figure class="led-pwm">
+        <svg viewBox="0 0 760 215" role="img" aria-label="PWM 占空比：数值越大，一个周期里这一路亮的时间越长">
+          <text x="40" y="18" font-size="12" fill="#5f5952">单路的占空比：一个周期里这一路亮多久（周期很短，看不到闪）</text>
+          <g font-size="12" fill="#1c1917" text-anchor="end">
+            <text x="70" y="58">0</text>
+            <text x="70" y="98">64</text>
+            <text x="70" y="138">128</text>
+            <text x="70" y="178">255</text>
+          </g>
+          <rect x="90" y="40" width="520" height="26" rx="6" fill="#f0ece6" stroke="#e7e2da"></rect>
+          <text x="350" y="58" text-anchor="middle" font-size="12" fill="#5f5952">灭 100%</text>
+          <rect x="90" y="80" width="130" height="26" rx="6" fill="#b23c07"></rect>
+          <rect x="220" y="80" width="390" height="26" rx="6" fill="#f0ece6" stroke="#e7e2da"></rect>
+          <text x="155" y="98" text-anchor="middle" font-size="12" fill="#fff">亮 25%</text>
+          <text x="415" y="98" text-anchor="middle" font-size="12" fill="#5f5952">灭 75%</text>
+          <rect x="90" y="120" width="260" height="26" rx="6" fill="#b23c07"></rect>
+          <rect x="350" y="120" width="260" height="26" rx="6" fill="#f0ece6" stroke="#e7e2da"></rect>
+          <text x="220" y="138" text-anchor="middle" font-size="12" fill="#fff">亮 50%</text>
+          <text x="480" y="138" text-anchor="middle" font-size="12" fill="#5f5952">灭 50%</text>
+          <rect x="90" y="160" width="520" height="26" rx="6" fill="#b23c07"></rect>
+          <text x="350" y="178" text-anchor="middle" font-size="12" fill="#fff">亮 100%</text>
+          <g font-size="11" fill="#5f5952" text-anchor="end">
+            <text x="650" y="58">0%</text>
+            <text x="650" y="98">25%</text>
+            <text x="650" y="138">50%</text>
+            <text x="650" y="178">100%</text>
+          </g>
+          <text x="350" y="205" text-anchor="middle" font-size="11" fill="#5f5952">数值 ÷ 255 = 一个周期里亮的时间比例</text>
+        </svg>
+        <figcaption>这一路亮得越久，它在颜色里占得越多；G/R/B 三路各自的占空比合起来，就是看到的颜色。</figcaption>
+      </figure>
+
+      <div class="mixer">
+        <div class="mixer-swatch" id="mix-swatch"><span id="mix-hex">#D2964B</span></div>
+        <div class="mixer-controls">
+          <label>R<input id="mix-r" type="range" min="0" max="255" value="210"><output id="mix-rv">210</output></label>
+          <label>G<input id="mix-g" type="range" min="0" max="255" value="150"><output id="mix-gv">150</output></label>
+          <label>B<input id="mix-b" type="range" min="0" max="255" value="75"><output id="mix-bv">75</output></label>
+          <p class="mixer-note">发送顺序 G→R→B：<code id="mix-order">G 150 · R 210 · B 75</code><br>占空比：<code id="mix-duty">R 82% · G 59% · B 29%</code><br>没有单独的亮度参数：三路数值就是颜色。</p>
+        </div>
+      </div>
+
+      <p>多个灯共用这一根线，像排队传纸条：数据按顺序发，每颗撕下最前面的 24 位，剩下的从 DOUT 传给下一颗。</p>
+
+      <figure class="led-train">
+        <svg viewBox="0 0 760 210" role="img" aria-label="多颗灯的数据顺序：每颗取走最前面的 24 位">
+          <defs>
+            <marker id="train-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#5f5952"></path>
+            </marker>
+          </defs>
+          <text x="40" y="18" font-size="12" fill="#5f5952">线上数据按顺序排好，每颗只取走最前面的 24 位</text>
+          <rect x="40" y="34" width="220" height="46" fill="#fdeee3" stroke="#b23c07" stroke-width="1.5"></rect>
+          <rect x="260" y="34" width="220" height="46" fill="#f5f1ea" stroke="#b9b1a6" stroke-width="1.5"></rect>
+          <rect x="480" y="34" width="240" height="46" fill="#f5f1ea" stroke="#b9b1a6" stroke-width="1.5" stroke-dasharray="4 3"></rect>
+          <text x="150" y="62" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1917">LED0 · 24 位</text>
+          <text x="370" y="62" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1917">LED1 · 24 位</text>
+          <text x="600" y="62" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1917">灯环 2–25 · 24 颗 × 24 位</text>
+          <line x1="150" y1="80" x2="150" y2="110" stroke="#5f5952" stroke-width="1.5" marker-end="url(#train-arrow)"></line>
+          <line x1="370" y1="80" x2="370" y2="110" stroke="#5f5952" stroke-width="1.5" marker-end="url(#train-arrow)"></line>
+          <line x1="600" y1="80" x2="600" y2="110" stroke="#5f5952" stroke-width="1.5" marker-end="url(#train-arrow)"></line>
+          <rect x="80" y="112" width="140" height="50" rx="8" fill="#fff" stroke="#e7e2da"></rect>
+          <rect x="300" y="112" width="140" height="50" rx="8" fill="#fff" stroke="#e7e2da"></rect>
+          <rect x="530" y="112" width="140" height="50" rx="8" fill="#fff" stroke="#e7e2da"></rect>
+          <text x="150" y="133" text-anchor="middle" font-size="12" font-weight="600" fill="#1c1917">LED0 取走</text>
+          <text x="150" y="150" text-anchor="middle" font-size="11" fill="#5f5952">显示橙</text>
+          <text x="370" y="133" text-anchor="middle" font-size="12" font-weight="600" fill="#1c1917">LED1 取走</text>
+          <text x="370" y="150" text-anchor="middle" font-size="11" fill="#5f5952">显示蓝</text>
+          <text x="600" y="133" text-anchor="middle" font-size="12" font-weight="600" fill="#1c1917">灯环取走</text>
+          <text x="600" y="150" text-anchor="middle" font-size="11" fill="#5f5952">显示灯环颜色</text>
+          <text x="380" y="196" text-anchor="middle" font-size="11" fill="#5f5952">没有地址：编号就是它在队里的位置</text>
+        </svg>
+        <figcaption>LED0 拿走前 24 位，剩下的从 DOUT 传给 LED1；LED1 再拿走 24 位，剩下的继续往灯环传。发完一整帧后拉低 &gt;50µs，所有灯同时刷新。</figcaption>
+      </figure>
+
+      <p>代码里 <code>leds.Color(r, g, b)</code> 只是把三个 0–255 的数打包成 24 位，<code>show()</code> 再按顺序发出去。</p>
+
+      <ul class="plain">
+        <li>灯环接在板载两颗之后：第一个环 2–25，第二个环 26–49。代码里 <code>LED_COUNT</code> 写 2 只点亮板载；接一个环写 26，接两个写 50。</li>
+        <li>三路都拉满是白色；24 灯环全白约 1.44A（每颗约 60mA），超过板载 5V 的约 1A 预算，所以课程约定灯环的三路数值不超过 40%（102/255）。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="first-sketch">
+    <h2><span class="n">实战</span>灯链：从板载灯到双灯环</h2>
+    <p class="sub">先烧 01，再按需要往上加：02 双灯呼吸、03 单环、04 双环。</p>
+
+    <div class="dev-step">
+      <div class="n">1</div>
+      <div>
+        <h3>打开例程</h3>
+        <p>双击 <code>examples\01_blink_rgb\01_blink_rgb.ino</code>；没关联到 IDE 就用 <code>File → Open</code>。</p>
+        <p class="res"><a href="../examples/01_blink_rgb/01_blink_rgb.ino">examples\01_blink_rgb\01_blink_rgb.ino</a></p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">2</div>
+      <div>
+        <h3>选开发板</h3>
+        <p><code>Tools → Board → ESP32 Arduino → ESP32 Dev Module</code>。这块板是 ESP32-WROOM-32，不要选 S3、C3 等其他型号。选完 Tools 菜单顶部会显示 <code>Board: ESP32 Dev Module</code>。</p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">3</div>
+      <div>
+        <h3>选端口</h3>
+        <p>插好 USB 线，<code>Tools → Port</code> 选 <code>Silicon Labs CP210x</code> 对应的 COM 口。列表里没有这个口，回第 2 步装驱动；选完顶部显示 <code>Port: COMx</code>。</p>
+      </div>
+    </div>
+
+    <div class="dev-step">
+      <div class="n">4</div>
+      <div>
+        <h3>上传，看现象</h3>
+        <p>点左上角 <b>→</b>（或 <code>Ctrl+U</code>）上传，第一次编译约 1–2 分钟。看到 <code>Done uploading</code> 后，两颗灯红蓝交替亮 0.4 秒、灭 0.2 秒；只点板载灯，USB 供电就够。</p>
+        <p>失败先关串口监视器；还失败就把 <code>Tools → Upload Speed</code> 降到 115200 再试。</p>
+        <p>改颜色、速度、亮度都在文件顶部的常量和 <code>leds.Color()</code> 里。接一个灯环 <code>LED_COUNT</code> 改 26，两个改 50；亮度不超过 40。</p>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:14px">
+      <h3>再炫一点：双灯呼吸彩虹</h3>
+      <p>打开 <code>examples\02_rainbow_breathe\02_rainbow_breathe.ino</code>，上传方式同上。两颗灯取互补色，色相约 13 秒转一圈，亮度按正弦呼吸。</p>
+      <p>想改效果：<code>hue = now * 5</code> 控制转速，<code>sin(now / 700.0)</code> 控制呼吸周期，<code>MAX_BRIGHTNESS</code> 控制亮度上限。</p>
+      <p class="res"><a href="../examples/02_rainbow_breathe/02_rainbow_breathe.ino">examples\02_rainbow_breathe\02_rainbow_breathe.ino</a></p>
+    </div>
+
+    <div class="box" style="margin-top:14px">
+      <h3>接上灯环：彩虹彗星 + 流光</h3>
+      <p>打开 <code>examples\03_ring_show\03_ring_show.ino</code>。板载 0、1 加灯环 2–25 共 26 颗；两种效果每 8 秒自动切换，整条链亮度锁在 40%。</p>
+      <p class="res"><a href="../examples/03_ring_show/03_ring_show.ino">examples\03_ring_show\03_ring_show.ino</a></p>
+    </div>
+
+    <div class="box" style="margin-top:14px">
+      <h3>两环灯光秀：双彗星 / 反向旋涡 / 能量脉冲</h3>
+      <p>打开 <code>examples\04_dual_ring_show\04_dual_ring_show.ino</code>。板载 0、1 加两个 24 灯环（2–25、26–49），共 50 颗；三种效果每 7 秒切换，亮度 30%。</p>
+      <p class="res"><a href="../examples/04_dual_ring_show/04_dual_ring_show.ino">examples\04_dual_ring_show\04_dual_ring_show.ino</a></p>
+    </div>
+
+  </section>
+
+  <section id="oled">
+    <h2><span class="n">下一步</span>屏幕：0.91" OLED</h2>
+    <p class="sub">板载一块 128×32 的黑白小屏，接线已经做好。这一节先让它显示一条滚动波浪线，再讲清楚它是怎么亮起来的。</p>
+
+    <div class="two">
+      <div class="box">
+        <img src="assets/pair4-board.jpg" alt="板载 0.91 英寸 OLED" width="380" height="275" loading="lazy" decoding="async" style="display:block;width:100%;height:auto;border:1px solid var(--line);border-radius:8px">
+        <p class="sub" style="margin:8px 0 0">实物 · 0.91 英寸，128×32 个点</p>
+      </div>
+      <div class="box">
+        <h3>先认三个东西</h3>
+        <ul class="plain">
+          <li><b>点</b>：屏幕由 128 列 × 32 行小点组成，每个点只有亮、灭两种状态。</li>
+          <li><b>驱动芯片 SSD1306</b>：屏幕背后的小芯片，负责记住每个点亮不亮。</li>
+          <li><b>I2C</b>：ESP32 和芯片之间的两根线；一根打拍子（SCL），一根传数据（SDA）。</li>
+        </ul>
+      </div>
+    </div>
+
+    <figure class="oled-flow">
+      <svg viewBox="0 0 760 240" role="img" aria-label="ESP32 通过两根线把一张黑白图发给屏幕驱动芯片">
+        <defs>
+          <marker id="oled-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5f5952"></path>
+          </marker>
+        </defs>
+        <rect x="30" y="80" width="150" height="80" rx="10" fill="#fdeee3" stroke="#b23c07" stroke-width="1.5"></rect>
+        <text x="105" y="112" text-anchor="middle" font-size="16" font-weight="600" fill="#1c1917">ESP32</text>
+        <text x="105" y="132" text-anchor="middle" font-size="11" fill="#5f5952">负责画图、发数据</text>
+        <text x="105" y="190" text-anchor="middle" font-size="11" fill="#5f5952">图先画在 ESP32 内存里</text>
+        <text x="290" y="72" text-anchor="middle" font-size="11" fill="#5f5952">两根线：I2C</text>
+        <line x1="180" y1="105" x2="398" y2="105" stroke="#5f5952" stroke-width="1.5" marker-end="url(#oled-arrow)"></line>
+        <line x1="180" y1="135" x2="398" y2="135" stroke="#5f5952" stroke-width="1.5" marker-end="url(#oled-arrow)"></line>
+        <text x="290" y="97" text-anchor="middle" font-size="11" fill="#5f5952">SCL：打拍子</text>
+        <text x="290" y="153" text-anchor="middle" font-size="11" fill="#5f5952">SDA：传 0/1</text>
+        <rect x="400" y="45" width="330" height="160" rx="10" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
+        <text x="420" y="70" font-size="14" font-weight="600" fill="#1c1917">SSD1306</text>
+        <text x="500" y="70" font-size="11" fill="#5f5952">屏幕驱动芯片</text>
+        <rect x="420" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="420" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="432" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="432" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="444" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="456" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="468" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="480" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="480" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="492" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="492" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="504" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="504" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="516" y="107" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="516" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="528" y="107" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="528" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="540" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="540" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="552" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="552" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="564" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="564" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="576" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="588" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="600" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="612" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="612" y="155" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="624" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="624" y="143" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="636" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="636" y="131" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="648" y="107" width="12" height="12" fill="#b23c07"></rect>
+        <rect x="648" y="119" width="12" height="12" fill="#b23c07"></rect>
+        <path d="M420 95 V167 M432 95 V167 M444 95 V167 M456 95 V167 M468 95 V167 M480 95 V167 M492 95 V167 M504 95 V167 M516 95 V167 M528 95 V167 M540 95 V167 M552 95 V167 M564 95 V167 M576 95 V167 M588 95 V167 M600 95 V167 M612 95 V167 M624 95 V167 M636 95 V167 M648 95 V167 M660 95 V167 M420 95 H660 M420 107 H660 M420 119 H660 M420 131 H660 M420 143 H660 M420 155 H660 M420 167 H660" stroke="#e7e2da" stroke-width="0.6" fill="none"></path>
+        <text x="420" y="185" font-size="11" fill="#5f5952">128×32 个点（放大示意）</text>
+      </svg>
+      <figcaption>屏幕不会自己画图：ESP32 把一张 128×32 的黑白图发给 SSD1306，芯片记住每个点，再驱动屏幕显示。</figcaption>
+    </figure>
+
+    <div class="two">
+      <div class="box">
+        <h3>一张图 = 512 字节</h3>
+        <p>每个点用 0（灭）或 1（亮）记录；128×32 = 4096 个点，也就是 4096 个 0/1，正好 512 字节。</p>
+        <p>所以这块屏只能显示黑白，不能显示彩色。</p>
+      </div>
+      <div class="box">
+        <h3>代码里发生了什么</h3>
+        <p><code>drawPixel</code> 只是在内存里的图上涂一个点；<code>display()</code> 才把整张图发给屏幕。</p>
+        <p>就像先在纸上画好，再整张递给屏幕。</p>
+      </div>
+    </div>
+
+    <figure class="i2c-wave">
+      <svg viewBox="0 0 760 210" role="img" aria-label="I2C 波形：START、地址 0x78、控制 0x40、数据、STOP">
+        <text x="40" y="24" font-size="11" fill="#5f5952">START</text>
+        <text x="620" y="24" font-size="11" fill="#5f5952">STOP</text>
+        <text x="160" y="42" text-anchor="middle" font-size="10.5" fill="#1c1917">地址 0x78</text>
+        <text x="250" y="42" text-anchor="middle" font-size="10.5" fill="#5f5952">ACK</text>
+        <text x="340" y="42" text-anchor="middle" font-size="10.5" fill="#1c1917">控制 0x40</text>
+        <text x="430" y="42" text-anchor="middle" font-size="10.5" fill="#5f5952">ACK</text>
+        <text x="530" y="42" text-anchor="middle" font-size="10.5" fill="#5f5952">512 字节数据（省略）</text>
+        <g stroke="#ece7df" stroke-width="1" stroke-dasharray="3 3">
+          <line x1="80" y1="30" x2="80" y2="170"></line>
+          <line x1="240" y1="30" x2="240" y2="170"></line>
+          <line x1="260" y1="30" x2="260" y2="170"></line>
+          <line x1="420" y1="30" x2="420" y2="170"></line>
+          <line x1="440" y1="30" x2="440" y2="170"></line>
+        </g>
+        <text x="18" y="85" font-size="12" fill="#5f5952">SCL</text>
+        <text x="18" y="155" font-size="12" fill="#5f5952">SDA</text>
+        <path d="M40 50 H80 V80 H88 V50 H100 V80 H108 V50 H120 V80 H128 V50 H140 V80 H148 V50 H160 V80 H168 V50 H180 V80 H188 V50 H200 V80 H208 V50 H220 V80 H228 V50 H240 V80 H248 V50 H260 V80 H268 V50 H280 V80 H288 V50 H300 V80 H308 V50 H320 V80 H328 V50 H340 V80 H348 V50 H360 V80 H368 V50 H380 V80 H388 V50 H400 V80 H408 V50 H420 V80 H428 V50 H440 V80 V50 H650" stroke="#5f5952" stroke-width="1.8" fill="none"></path>
+        <path d="M40 120 H70 V150 H80 H100 V120 H120 H140 H160 H180 V150 H200 H220 H240 H260 H280 V120 H300 V150 H320 H340 H360 H380 H400 H420 H440" stroke="#b23c07" stroke-width="1.8" fill="none"></path>
+        <line x1="440" y1="150" x2="620" y2="150" stroke="#b23c07" stroke-width="1.5" stroke-dasharray="4 3"></line>
+        <path d="M620 150 H625 V120 H650" stroke="#b23c07" stroke-width="1.8" fill="none"></path>
+        <g font-size="8.5" fill="#5f5952" text-anchor="middle">
+          <text x="90" y="112">0</text><text x="110" y="112">1</text><text x="130" y="112">1</text><text x="150" y="112">1</text><text x="170" y="112">1</text><text x="190" y="112">0</text><text x="210" y="112">0</text><text x="230" y="112">0</text><text x="250" y="112">0</text><text x="270" y="112">0</text><text x="290" y="112">1</text><text x="310" y="112">0</text><text x="330" y="112">0</text><text x="350" y="112">0</text><text x="370" y="112">0</text><text x="390" y="112">0</text><text x="410" y="112">0</text><text x="430" y="112">0</text>
+        </g>
+        <text x="380" y="185" text-anchor="middle" font-size="10.5" fill="#5f5952">SCL 低：改数据 · SCL 高：读数据 · 每 8 位后 1 位 ACK</text>
+      </svg>
+      <figcaption>地址 0x3C 是 7 位地址，写操作时线上发的是 0x78；控制字节 0x40 表示后面是像素数据。屏幕每收到 8 位就把 SDA 拉低一拍，表示 ACK（收到了）。</figcaption>
+    </figure>
+
+    <div class="box" style="margin-top:12px">
+      <h3>两根线怎么配合</h3>
+      <ol class="plain">
+        <li>SCL 打一拍，SDA 传一位；SCL 低时 ESP32 改数据，SCL 高时屏幕读走。</li>
+        <li>每 8 位是一字节；屏幕收到后把 SDA 拉低一拍，表示 ACK（收到了）。</li>
+        <li>ESP32 先叫门牌号，发控制字 0x40（像素数据），再连发 512 字节；最后 STOP 结束。</li>
+      </ol>
+      <p class="sub" style="margin:4px 0 0">0x00 是命令（设置），0x40 是像素数据；屏幕的供电和两根线都在板上接好了，代码里只需要指定地址 <code>0x3C</code>。</p>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>例程：滚动正弦波</h3>
+      <p>打开 <code>examples\05_oled_wave\05_oled_wave.ino</code>。先显示「LT100」开机画面，再显示一条滚动的波浪线和运行秒数。</p>
+      <p class="res"><a href="../examples/05_oled_wave/05_oled_wave.ino">examples\05_oled_wave\05_oled_wave.ino</a></p>
+    </div>
+  </section>
+  <footer>
+    LT100 · 主控板 · 一手资料：<a href="../docs/reference/board/servo-driver-esp32-user-manual-cn.pdf">用户手册</a> · <a href="../docs/reference/board/servo-driver-esp32-board-schematic.pdf">原理图</a> · <a href="../docs/reference/README.md">全部资料</a>
+  </footer>
+
+</div>
+
+<dialog id="sch-zoom" class="zoom" aria-label="整板原理图放大">
+  <div class="zoom-bar">
+    <span>整板原理图 · 拖动查看</span>
+    <a href="../docs/reference/board/servo-driver-esp32-board-schematic.pdf" target="_blank" rel="noopener">打开 PDF</a>
+    <button type="button" class="close" aria-label="关闭">×</button>
+  </div>
+  <div class="zoom-canvas">
+    <img alt="整板原理图（放大）" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="assets/board-schematic-full.png" width="3368" height="2380" decoding="async">
+  </div>
+</dialog>
+<script>
+(() => {
+  const dlg = document.getElementById('sch-zoom');
+  const big = dlg.querySelector('img');
+  document.querySelectorAll('.zoom-open').forEach((btn) => btn.addEventListener('click', () => {
+    big.src = big.dataset.src;
+    dlg.showModal();
+  }));
+  dlg.querySelector('.close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+})();
+(() => {
+  const sw = document.getElementById('mix-swatch');
+  if (!sw) return;
+  const hex = document.getElementById('mix-hex');
+  const order = document.getElementById('mix-order');
+  const duty = document.getElementById('mix-duty');
+  const pct = (v) => Math.round(v / 255 * 100);
+  const ch = [['r', 'mix-r', 'mix-rv'], ['g', 'mix-g', 'mix-gv'], ['b', 'mix-b', 'mix-bv']];
+  const vals = { r: 210, g: 150, b: 75 };
+  const render = () => {
+    ch.forEach(([k, id, out]) => {
+      vals[k] = Number(document.getElementById(id).value);
+      document.getElementById(out).textContent = vals[k];
+    });
+    sw.style.background = `rgb(${vals.r}, ${vals.g}, ${vals.b})`;
+    hex.textContent = '#' + ['r', 'g', 'b'].map((k) => vals[k].toString(16).padStart(2, '0')).join('').toUpperCase();
+    order.textContent = `G ${vals.g} · R ${vals.r} · B ${vals.b}`;
+    duty.textContent = `R ${pct(vals.r)}% · G ${pct(vals.g)}% · B ${pct(vals.b)}%`;
+    const lum = 0.299 * vals.r + 0.587 * vals.g + 0.114 * vals.b;
+    hex.style.color = lum > 140 ? '#1c1917' : '#fff';
+    hex.style.textShadow = lum > 140 ? 'none' : '0 1px 2px rgba(0,0,0,.35)';
+  };
+  ch.forEach(([, id]) => document.getElementById(id).addEventListener('input', render));
+  render();
+})();
+</script>
+</body>
+</html>
