@@ -1,17 +1,19 @@
-# LT100 browser serial console launcher
-# Serves LT100/ over http://127.0.0.1:<port>/ and opens web/serial.html.
+# LT100 browser console launcher
+# Serves LT100/ over http://127.0.0.1:<port>/ and opens web/<Page>.
 # Web Serial requires a secure context, so localhost is intentional.
 
 [CmdletBinding()]
 param(
     [int]$Port = 8770,
+    [string]$Page = 'serial.html',
     [switch]$NoBrowser
 )
 
 $ErrorActionPreference = 'Stop'
+if ($Page -notmatch '^[A-Za-z0-9._-]+\.html$') { throw "Invalid page: $Page" }
 $root = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $rootPrefix = $root.TrimEnd('\') + '\'
-$url = "http://127.0.0.1:$Port/web/serial.html"
+$url = "http://127.0.0.1:$Port/web/$Page"
 
 $contentTypes = @{
     '.html' = 'text/html; charset=utf-8'
@@ -31,7 +33,7 @@ $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 
 try {
     $listener.Start()
-    Write-Host "LT100 serial console: $url" -ForegroundColor Green
+    Write-Host "LT100 web console: $url" -ForegroundColor Green
     Write-Host 'Keep this window open. Press Ctrl+C to stop.' -ForegroundColor DarkGray
     if (-not $NoBrowser) {
         try { Start-Process $url } catch { Write-Host "Open this URL manually: $url" -ForegroundColor Yellow }
@@ -41,7 +43,7 @@ try {
         $context = $listener.GetContext()
         try {
             $requestPath = [Uri]::UnescapeDataString($context.Request.Url.AbsolutePath.TrimStart('/'))
-            if ([string]::IsNullOrWhiteSpace($requestPath)) { $requestPath = 'web/serial.html' }
+            if ([string]::IsNullOrWhiteSpace($requestPath)) { $requestPath = "web/$Page" }
             $fullPath = [System.IO.Path]::GetFullPath((Join-Path $root $requestPath))
 
             if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {

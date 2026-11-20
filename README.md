@@ -1,6 +1,6 @@
-# LT100 — 三轴机械臂台灯教具
+# LT100 — 三轴平面机械臂台灯教具
 
-智能硬件教学教具：三轴机械臂 + 3×ST3215 总线舵机 + ESP32 + WS2812 灯环。
+智能硬件教学教具：3R 平面机械臂（肩/肘/腕三轴共面）+ 3×ST3215 总线舵机 + ESP32 + WS2812 灯环。
 不是对外销售的产品，优先可观察、可测量、可拆改。
 
 ## 当前版本（2026-11-18 定稿）
@@ -28,7 +28,9 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 运动学与力学（FK/IK、工作空间、力臂与电流、7 个实验）：[docs/teach/kinematics-and-force.md](docs/teach/kinematics-and-force.md)
 - 学生机离线 Arduino 环境（安装/验证/agent 执行）：[docs/teach/arduino-env.md](docs/teach/arduino-env.md)
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
+- 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
 - 网页串口控制台（Web Serial）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
+- 网页舵机标定台（扫描/卸力/MIN/MAX/安全区 MOVE）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
 - 采购台账（30 套实付，¥4342.94）：[docs/build/purchase-list.md](docs/build/purchase-list.md)
 - 官方参考资料（手册/原理图/数据手册/例程）：[docs/reference/README.md](docs/reference/README.md)
 - 课程例程（按课次编号）：[examples/](examples/)

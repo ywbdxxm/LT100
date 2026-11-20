@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LT100 · 舵机标定台</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="serial.css">
+<link rel="stylesheet" href="servo.css">
+</head>
+<body class="serial-page servo-page">
+<header class="serial-top">
+  <div class="wrap serial-top-inner">
+    <a class="back" href="index.html#servo">← 返回 LT100</a>
+    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">舵机标定台</span></div>
+    <div class="conn-state" id="connState"><span class="dot"></span><span id="connText">未连接</span></div>
+  </div>
+</header>
+
+<main class="wrap serial-main">
+  <section class="serial-intro">
+    <div>
+      <h1>先标定，再让关节动</h1>
+      <p class="lead">用浏览器直接连 09_servo_basic：扫描位置、卸力、记录 MIN/MAX、上力，再在安全区内试动。不用串口助手。这是 3R 平面臂：三个关节共面，只在一个竖直平面内动，标定也只针对平面内的关节限位。</p>
+    </div>
+    <div class="serial-actions">
+      <button id="connectBtn" class="btn primary" type="button">连接串口</button>
+      <button id="disconnectBtn" class="btn" type="button" disabled>断开</button>
+      <span id="portInfo" class="port-info">未选择端口</span>
+    </div>
+  </section>
+
+  <div id="support" class="notice warn" hidden></div>
+  <div id="hint" class="notice info" hidden></div>
+
+  <div class="notice warn servo-safety">
+    <b>先扶住手臂。</b>「卸力」只会关掉输出力矩，不会给舵机断电；关节可能掉下来。标定全程 12V 5A 必须打开，USB 只给逻辑。先做腕、再做肘、最后做肩；每次只动一个关节，MOVE 只发安全区内的目标。
+  </div>
+
+  <div class="servo-work">
+    <section class="servo-joints" id="joints" aria-label="三个关节状态">
+      <button class="joint-card" type="button" data-id="1" aria-pressed="true">
+        <div class="joint-head"><span class="joint-id">ID1</span><span class="pill" id="j1state">离线</span></div>
+        <div class="joint-pos" id="j1pos">----</div>
+        <div class="joint-meta">
+          <span>电压 <b id="j1volt">—</b></span>
+          <span>温度 <b id="j1temp">—</b></span>
+          <span>负载 <b id="j1load">—</b></span>
+        </div>
+        <div class="joint-safe" id="j1safe">安全区：未标定</div>
+      </button>
+      <button class="joint-card" type="button" data-id="2" aria-pressed="false">
+        <div class="joint-head"><span class="joint-id">ID2</span><span class="pill" id="j2state">离线</span></div>
+        <div class="joint-pos" id="j2pos">----</div>
+        <div class="joint-meta">
+          <span>电压 <b id="j2volt">—</b></span>
+          <span>温度 <b id="j2temp">—</b></span>
+          <span>负载 <b id="j2load">—</b></span>
+        </div>
+        <div class="joint-safe" id="j2safe">安全区：未标定</div>
+      </button>
+      <button class="joint-card" type="button" data-id="3" aria-pressed="false">
+        <div class="joint-head"><span class="joint-id">ID3</span><span class="pill" id="j3state">离线</span></div>
+        <div class="joint-pos" id="j3pos">----</div>
+        <div class="joint-meta">
+          <span>电压 <b id="j3volt">—</b></span>
+          <span>温度 <b id="j3temp">—</b></span>
+          <span>负载 <b id="j3load">—</b></span>
+        </div>
+        <div class="joint-safe" id="j3safe">安全区：未标定</div>
+      </button>
+    </section>
+
+    <aside class="servo-side">
+      <section class="card">
+        <h2>标定流程 · <span id="currentJoint">ID1</span></h2>
+        <p class="fine servo-current">当前选中 <b id="currentJoint2">ID1</b>。先点「刷新」，确认在线。</p>
+        <div class="step-list">
+          <div class="step-row" data-step="1">
+            <span class="step-num">1</span>
+            <div><b>选关节</b><p>建议先腕（ID3），再肘（ID2），最后肩（ID1）。</p></div>
+            <span class="step-state" id="s1state">—</span>
+          </div>
+          <div class="step-row" data-step="2">
+            <span class="step-num">2</span>
+            <div><b>卸力</b><p>手扶住手臂，再发 TORQUE OFF；12V 保持打开。</p></div>
+            <button class="btn tiny" id="torqueOffBtn" type="button" disabled>卸力</button>
+          </div>
+          <div class="step-row" data-step="3">
+            <span class="step-num">3</span>
+            <div><b>记录下限</b><p>把关节慢慢移到安全下限，记录当前刻度。</p></div>
+            <button class="btn tiny" id="markMinBtn" type="button" disabled>MARK MIN</button>
+          </div>
+          <div class="step-row" data-step="4">
+            <span class="step-num">4</span>
+            <div><b>记录上限</b><p>再移到安全上限，记录当前刻度。</p></div>
+            <button class="btn tiny" id="markMaxBtn" type="button" disabled>MARK MAX</button>
+          </div>
+          <div class="step-row" data-step="5">
+            <span class="step-num">5</span>
+            <div><b>上力</b><p>确认手臂在安全区内，再恢复力矩。</p></div>
+            <button class="btn tiny" id="torqueOnBtn" type="button" disabled>TORQUE ON</button>
+          </div>
+        </div>
+        <p class="fine servo-live">
+          <label><input type="checkbox" id="liveRead"> 实时读当前关节（约 0.9s）</label>
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>安全区内试动</h2>
+        <div class="safe-line" id="safeLine">未标定：MOVE 会被拒绝</div>
+        <div class="move-grid">
+          <label>目标刻度
+            <input id="target" type="number" inputmode="numeric" step="1" placeholder="safe 区间内" disabled>
+          </label>
+          <label>速度
+            <input id="speed" type="number" inputmode="numeric" min="1" max="600" step="1" value="250" disabled>
+          </label>
+        </div>
+        <button id="moveBtn" class="btn primary wide" type="button" disabled>发送 MOVE</button>
+        <button id="refreshBtn" class="btn wide" type="button" disabled>刷新状态</button>
+        <p class="fine">不会自动回位；先小范围试，再逐步扩大。位置取 safe 区间内。</p>
+      </section>
+
+      <section class="card">
+        <h2>清理与说明</h2>
+        <button id="clearBtn" class="btn wide" type="button" disabled>清除当前关节限位</button>
+        <p class="fine">换舵机、拆臂或换安装孔后必须重标。CLEAR 只清 NVS，不会让关节运动。</p>
+      </section>
+    </aside>
+  </div>
+
+  <section class="card terminal-card servo-terminal" aria-label="串口日志">
+    <div class="card-head">
+      <h2>串口日志</h2>
+      <button id="clearLog" class="btn tiny dark" type="button">清空</button>
+    </div>
+    <div id="log" class="terminal" role="log" aria-live="polite"></div>
+    <form id="sendForm" class="send-row">
+      <span class="prompt" aria-hidden="true">&gt;</span>
+      <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="也可以直接发命令，例如 SCAN / LIMITS / READ 1" disabled aria-label="舵机命令">
+      <button class="btn primary" type="submit" id="sendBtn" disabled>发送</button>
+    </form>
+    <div class="quick-row">
+      <button class="chip" type="button" data-cmd="SCAN">SCAN</button>
+      <button class="chip" type="button" data-cmd="LIMITS">LIMITS</button>
+      <button class="chip" type="button" data-cmd="READ 1">READ 1</button>
+      <button class="chip" type="button" data-cmd="HELP">HELP</button>
+    </div>
+  </section>
+
+  <section class="card help-card">
+    <h2>第一次用</h2>
+    <ol class="plain">
+      <li>板上烧录 <code>09_servo_basic</code>，12V 5A 接好<b>并打开</b>，USB-C 接电脑；手扶住手臂。</li>
+      <li>双击 <code>start-servo-console.bat</code>，或从主导航的「舵机」章节打开本页。</li>
+      <li>点「连接串口」，选 <b>Silicon Labs CP210x</b> 对应的 COM 口。</li>
+      <li>先点「刷新」看 3/3 在线；0/3 先查 12V、3P 线和 ID，不要继续标定。</li>
+      <li>选腕（ID3）→ 扶住 →「卸力」→ 手移到下限 →「MARK MIN」→ 移到上限 →「MARK MAX」→「TORQUE ON」。</li>
+      <li>在 safe 区间内填一个目标，发 MOVE；用「刷新」或实时读数确认位置。</li>
+    </ol>
+    <p class="fine">需要 Chrome / Edge 89+，或 Firefox 151+；Safari 不支持。页面必须从 localhost 打开；<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
+    <p class="fine">完整原理、命令表和错误码：<a href="../docs/teach/servo-basic.md">docs/teach/servo-basic.md</a>；固件：<a href="../examples/09_servo_basic/09_servo_basic.ino">09_servo_basic.ino</a>。</p>
+  </section>
+</main>
+
+<footer class="wrap serial-footer">
+  LT100 · 舵机标定台 · <a href="index.html#servo">舵机原理</a> · <a href="serial.html">串口控制台</a>
+</footer>
+
+<script src="servo.js"></script>
+</body>
+</html>

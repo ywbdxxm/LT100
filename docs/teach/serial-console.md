@@ -173,7 +173,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 
 ## 9. 后续
 
-- `SERVO` 命令：接 UART1 和 `SMS_STS`，例如 `SERVO 1 2048 1000`。
+- `SERVO` 命令：接 UART1 和 `SMS_STS`；[09_servo_basic](servo-basic.md) 已实现读位置、逐关节 MIN/MAX 标定和受区间保护的 `MOVE`，下一步把命令并进 08。
 - 电脑端二进制帧流：OLED 当第二屏，灯环跟着画面变色。
 - PC 系统监控 / 音频频谱：电脑算 CPU、内存或 FFT，板子只负责显示和发光。
 - Web Serial 控制台已实现：`web/serial.html`，从 `start-web-console.bat` 启动。

@@ -110,6 +110,6 @@ OK color=#FF6600
 
 ## 9. 后续扩展
 
-- `SERVO` 命令：`SERVO ID POS SPEED`、`SERVO READ`，复用 UART1 和 `SMS_STS`。
+- `SERVO` 命令：`SERVO ID POS SPEED`、`SERVO READ`，复用 UART1 和 `SMS_STS`；逐关节限位已在 [09_servo_basic](../teach/servo-basic.md) 落地，下一步并进 08。
 - 二进制帧流：电脑推 128×32 画面，OLED 当第二屏；作为串口第二例程。
-- Web Serial 面板：浏览器直接连 COM 口，做颜色滑杆和遥测曲线。
+- Web Serial 面板已实现：`web/serial.html`，浏览器直接连 COM 口，做颜色滑杆和遥测曲线。
