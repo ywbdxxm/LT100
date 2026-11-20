@@ -35,6 +35,12 @@ nav .wrap{display:flex; align-items:center; gap:18px; height:52px}
 nav .brand{font-weight:650; letter-spacing:.02em}
 nav a{font-size:13.5px; color:var(--muted); text-decoration:none}
 nav a:hover{color:var(--accent-text)}
+nav a.nav-cta{margin-left:auto; background:var(--accent-text); color:#fff; padding:5px 10px; border-radius:7px; font-weight:600; white-space:nowrap}
+nav a.nav-cta:hover{background:#963205; color:#fff}
+@media (max-width:760px){
+  nav .wrap{flex-wrap:wrap; height:auto; padding:8px 0; gap:8px 14px}
+  nav a.nav-cta{margin-left:0}
+}
 
 /* rhythm */
 section{margin:40px 0; scroll-margin-top:70px}
