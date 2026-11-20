@@ -20,6 +20,7 @@
     <a href="#led-principle">原理</a>
     <a href="#first-sketch">实战</a>
     <a href="#oled">屏幕</a>
+    <a href="#serial">串口</a>
   </div>
 </nav>
 
@@ -285,6 +286,11 @@
                     <li><span class="file">07_oled_cube.ino</span><span class="what">U8g2 线框立方体 + 透视旋转</span></li>
                   </ul>
                 </li>
+                <li><span class="dir">08_serial_console/</span><span class="what">串口：电脑控制台</span>
+                  <ul>
+                    <li><span class="file">08_serial_console.ino</span><span class="what">UART0 命令解析 + OLED 三行 + 灯环/RX/TX</span></li>
+                  </ul>
+                </li>
               </ul>
             </li>
             <li><span class="dir">resources/</span>
@@ -293,6 +299,11 @@
                 <li><span class="dir">CP210x_Universal_Windows_Driver/</span><span class="what">串口驱动（已解压）</span></li>
                 <li><span class="dir">arduino-cli/</span><span class="what">命令行工具，免安装</span></li>
                 <li><span class="dir">arduino-offline/</span><span class="what">离线 ESP32 支持包 + 课程库（约 2 GB）</span></li>
+              </ul>
+            </li>
+            <li><span class="dir">tools/</span>
+              <ul>
+                <li><span class="file">serial-console.ps1</span><span class="what">串口控制台（PowerShell，免 Python）</span></li>
               </ul>
             </li>
             <li><span class="dir">web/</span>
@@ -771,6 +782,198 @@
       <p class="res"><a href="../examples/07_oled_cube/07_oled_cube.ino">examples\07_oled_cube\07_oled_cube.ino</a></p>
 
       <p>两个例程都把灯环调成低亮度环境光。为什么用 U8g2：它就是给这类单色屏做的，字体、线框、圆都有现成函数；LVGL 那类完整 GUI 框架更适合彩色触屏。代码开头 <code>U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C oled(..., 22, 21)</code> 就是在选屏幕型号并指定 SCL=22、SDA=21；<code>setBusClock(400000)</code> 把 I2C 提到 400 kHz，动画才够流畅。</p>
+    </div>
+  </section>
+
+  <section id="serial">
+    <h2><span class="n">再进一步</span>串口：让电脑接管</h2>
+    <p class="sub">前面都是板子自己跑；这一节让电脑发命令，板子用 OLED、灯环和回包回应。串口也是后面接舵机的入口。</p>
+
+    <div class="two">
+      <div class="box">
+        <h3>先认三个东西</h3>
+        <ul class="plain">
+          <li><b>USB 转串口 CP2102</b>：电脑没有 UART 引脚，靠这颗芯片把 USB 变成串口。</li>
+          <li><b>TX / RX</b>：两根单向线。电脑的 TX 接板子的 RX，板子的 TX 接电脑的 RX。</li>
+          <li><b>波特率</b>：每秒传多少位。两边必须一样，这里用 <code>115200</code>。</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>板子上的两个串口</h3>
+        <p><code>Serial</code> = UART0，GPIO1=TX、GPIO3=RX，走 USB-C 的 CP2102；烧录和串口监视器都用它。</p>
+        <p><code>Serial1</code> = UART1，GPIO18/19，已经接 ST3215 舵机总线；串口例程不碰它。</p>
+        <p class="sub" style="margin:4px 0 0">打开串口监视器时板子可能复位一次，这是 CP2102 的 DTR/RTS 自动下载电路，不是故障。</p>
+      </div>
+    </div>
+
+    <figure class="serial-flow">
+      <svg viewBox="0 0 760 240" role="img" aria-label="电脑通过 USB-C、CP2102 和 UART0 与 ESP32 通信，ESP32 再控制 OLED 和灯环">
+        <defs>
+          <marker id="serial-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5f5952"></path>
+          </marker>
+          <marker id="serial-arrow-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#b23c07"></path>
+          </marker>
+        </defs>
+        <rect x="20" y="70" width="150" height="100" rx="10" fill="#fdeee3" stroke="#b23c07" stroke-width="1.5"></rect>
+        <text x="95" y="105" text-anchor="middle" font-size="16" font-weight="600" fill="#1c1917">电脑</text>
+        <text x="95" y="126" text-anchor="middle" font-size="11" fill="#5f5952">串口监视器 / PowerShell</text>
+        <text x="95" y="146" text-anchor="middle" font-size="11" fill="#5f5952">发命令、收 JSON</text>
+
+        <line x1="170" y1="110" x2="218" y2="110" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
+        <text x="194" y="100" text-anchor="middle" font-size="10.5" fill="#5f5952">USB-C</text>
+
+        <rect x="220" y="70" width="160" height="100" rx="10" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
+        <text x="300" y="102" text-anchor="middle" font-size="15" font-weight="600" fill="#1c1917">CP2102</text>
+        <text x="300" y="122" text-anchor="middle" font-size="11" fill="#5f5952">USB ↔ UART</text>
+        <text x="300" y="142" text-anchor="middle" font-size="11" fill="#5f5952">电脑看到的 COMx</text>
+
+        <line x1="380" y1="100" x2="438" y2="100" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
+        <line x1="438" y1="130" x2="380" y2="130" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
+        <text x="409" y="90" text-anchor="middle" font-size="10.5" fill="#5f5952">TX</text>
+        <text x="409" y="148" text-anchor="middle" font-size="10.5" fill="#5f5952">RX</text>
+        <text x="400" y="170" text-anchor="middle" font-size="10" fill="#5f5952">GPIO1/3</text>
+
+        <rect x="440" y="55" width="150" height="130" rx="10" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
+        <text x="515" y="88" text-anchor="middle" font-size="16" font-weight="600" fill="#1c1917">ESP32</text>
+        <text x="515" y="110" text-anchor="middle" font-size="11" fill="#5f5952">UART0</text>
+        <text x="515" y="130" text-anchor="middle" font-size="11" fill="#5f5952">解析命令</text>
+        <text x="515" y="150" text-anchor="middle" font-size="11" fill="#5f5952">更新 OLED / 灯</text>
+
+        <line x1="590" y1="85" x2="628" y2="65" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
+        <rect x="630" y="35" width="105" height="60" rx="8" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
+        <text x="682" y="60" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1917">OLED</text>
+        <text x="682" y="78" text-anchor="middle" font-size="10.5" fill="#5f5952">I2C · 0x3C</text>
+
+        <line x1="590" y1="155" x2="628" y2="175" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
+        <rect x="630" y="145" width="105" height="60" rx="8" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
+        <text x="682" y="170" text-anchor="middle" font-size="13" font-weight="600" fill="#1c1917">灯环 / 板载灯</text>
+        <text x="682" y="188" text-anchor="middle" font-size="10.5" fill="#5f5952">GPIO23</text>
+
+        <path d="M515 185 V218 H95 V170" stroke="#b23c07" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#serial-arrow-accent)"></path>
+        <text x="305" y="232" text-anchor="middle" font-size="10.5" fill="#b23c07">OK / PONG / STAT 回电脑</text>
+      </svg>
+      <figcaption>电脑通过 CP2102 把 USB 变成 UART0；ESP32 收到命令后更新屏幕和灯，再把结果沿原路发回电脑。</figcaption>
+    </figure>
+
+    <div class="two">
+      <div class="box">
+        <h3>电脑发的是什么</h3>
+        <p>不是“串口信号”四个字，而是一串字节。例程把一行文字当一条命令，行尾用换行符 <code>\n</code> 结束；所以串口监视器要选 <b>Newline</b>。</p>
+        <p>命令本身是 ASCII：<code>C</code> 是 0x43，<code>O</code> 是 0x4F……板子逐个字节收，凑满一行再解析。</p>
+      </div>
+      <div class="box">
+        <h3>板子怎么回</h3>
+        <p>成功回 <code>OK ...</code>，失败回 <code>ERR 码 说明</code>；<code>PING</code> 回 <code>PONG 毫秒数</code>；<code>INFO</code> / <code>STAT</code> 回一行 JSON，电脑可以直接解析。</p>
+        <p><code>STREAM 1</code> 打开后每秒自动回一条 <code>STAT</code>，用来做实时曲线或监控。</p>
+      </div>
+    </div>
+
+    <figure class="uart-wave">
+      <svg viewBox="0 0 760 220" role="img" aria-label="UART 发送字符 A 的波形：空闲高、起始位低、8 位数据低位先发、停止位高">
+        <defs>
+          <marker id="uart-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5f5952"></path>
+          </marker>
+        </defs>
+        <g stroke="#ece7df" stroke-width="1" stroke-dasharray="3 3">
+          <line x1="80" y1="45" x2="80" y2="175"></line>
+          <line x1="140" y1="45" x2="140" y2="175"></line>
+          <line x1="200" y1="45" x2="200" y2="175"></line>
+          <line x1="260" y1="45" x2="260" y2="175"></line>
+          <line x1="320" y1="45" x2="320" y2="175"></line>
+          <line x1="380" y1="45" x2="380" y2="175"></line>
+          <line x1="440" y1="45" x2="440" y2="175"></line>
+          <line x1="500" y1="45" x2="500" y2="175"></line>
+          <line x1="560" y1="45" x2="560" y2="175"></line>
+          <line x1="620" y1="45" x2="620" y2="175"></line>
+          <line x1="680" y1="45" x2="680" y2="175"></line>
+        </g>
+        <g font-size="9.5" fill="#5f5952" text-anchor="middle">
+          <text x="60" y="38">空闲</text>
+          <text x="110" y="38">起始 0</text>
+          <text x="170" y="38">bit0 1</text>
+          <text x="230" y="38">bit1 0</text>
+          <text x="290" y="38">bit2 0</text>
+          <text x="350" y="38">bit3 0</text>
+          <text x="410" y="38">bit4 0</text>
+          <text x="470" y="38">bit5 0</text>
+          <text x="530" y="38">bit6 1</text>
+          <text x="590" y="38">bit7 0</text>
+          <text x="650" y="38">停止 1</text>
+        </g>
+        <text x="20" y="74" font-size="10.5" fill="#5f5952">高</text>
+        <text x="20" y="136" font-size="10.5" fill="#5f5952">低</text>
+        <path d="M40 70 H80 V130 H140 V70 H200 V130 H260 H320 H380 H440 H500 V70 H560 V130 H620 V70 H700" stroke="#b23c07" stroke-width="2" fill="none" stroke-linejoin="round"></path>
+        <line x1="40" y1="190" x2="700" y2="190" stroke="#5f5952" stroke-width="1" marker-end="url(#uart-arrow)"></line>
+        <text x="370" y="208" text-anchor="middle" font-size="10.5" fill="#5f5952">时间 →</text>
+        <text x="40" y="214" font-size="10.5" fill="#5f5952">0x41 = 'A'，低位先发</text>
+        <text x="700" y="214" text-anchor="end" font-size="10.5" fill="#5f5952">每位 8.68 µs @ 115200</text>
+      </svg>
+      <figcaption>UART 没有时钟线：先发一个低电平起始位，再发 8 个数据位（低位先发），最后拉高停止位。收方按同一个波特率采样。</figcaption>
+    </figure>
+
+    <div class="box">
+      <h3>例程：串口控制台</h3>
+      <p>打开 <code>examples\08_serial_console\08_serial_console.ino</code>，上传后打开串口监视器：<b>115200</b>、行尾 <b>Newline</b>。OLED 变成三行仪表盘，灯环执行命令，板载 0/1 号灯分别闪 RX/TX。</p>
+      <table>
+        <tr><th>命令</th><th>作用</th><th>示例回复</th></tr>
+        <tr><td><code>HELP</code></td><td>列出命令</td><td><code>OK commands: ...</code></td></tr>
+        <tr><td><code>PING</code></td><td>测试链路</td><td><code>PONG 12345</code></td></tr>
+        <tr><td><code>INFO</code></td><td>芯片、MAC、Flash、SDK</td><td><code>{"type":"info",...}</code></td></tr>
+        <tr><td><code>STAT</code></td><td>运行时间、堆、收发计数、模式</td><td><code>{"type":"stat",...}</code></td></tr>
+        <tr><td><code>MODE SOLID / RAINBOW / BREATHE / OFF</code></td><td>灯环模式</td><td><code>OK mode=RAINBOW</code></td></tr>
+        <tr><td><code>COLOR RRGGBB</code></td><td>设颜色并切单色</td><td><code>OK color=#FF6600</code></td></tr>
+        <tr><td><code>BRIGHT 0..40</code></td><td>亮度百分比</td><td><code>OK bright=20</code></td></tr>
+        <tr><td><code>TEXT &lt;ascii&gt;</code></td><td>OLED 显示文字，5 秒</td><td><code>OK text=HELLO</code></td></tr>
+        <tr><td><code>CLEAR</code></td><td>清除文字</td><td><code>OK text cleared</code></td></tr>
+        <tr><td><code>STREAM 0 / 1</code></td><td>每秒自动发 STAT</td><td><code>OK stream=1</code></td></tr>
+        <tr><td><code>SERVO ...</code></td><td>预留，后续接舵机</td><td><code>ERR 04 servo not enabled</code></td></tr>
+      </table>
+      <pre style="margin-top:12px"><code>&gt; PING
+PONG 12345
+&gt; COLOR FF6600
+OK color=#FF6600
+&gt; STAT
+{"type":"stat","up_ms":19720,"heap":321452,"rx":67,"tx":362,"cmds":8,"mode":"SOLID","color":"#FF6600","bright":20,"text":""}</code></pre>
+      <p class="sub" style="margin:6px 0 0">亮度上限 40%，是 50 颗灯全白时板载 5V 约 1A 的余量；<code>TEXT</code> 最多 20 个 ASCII 字符，中文需要额外字体。</p>
+      <p class="res"><a href="../examples/08_serial_console/08_serial_console.ino">examples\08_serial_console\08_serial_console.ino</a></p>
+    </div>
+
+    <div class="two">
+      <div class="box">
+        <h3>OLED 三行</h3>
+        <pre><code>M:SOLID B:20
+&gt; COLOR FF6600
+OK color=#FF6600</code></pre>
+        <p style="margin:8px 0 0">第一行模式 + 亮度，第二行最后命令，第三行最后回复；<code>TEXT</code> 有效时第三行显示文字。</p>
+      </div>
+      <div class="box">
+        <h3>灯环 + RX/TX</h3>
+        <p>灯环按 <code>MODE</code> 做环境光；<code>LED_COUNT = 50</code> 是板载 2 + 两个 24 灯环。只接一个也能跑，不接灯环就只有板载 2 颗。</p>
+        <p>板载 0 号灯闪 <b>RX</b>（收到字节），1 号灯闪 <b>TX</b>（发出数据）。<code>MODE OFF</code> 只关环境光，RX/TX 仍保留。</p>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>电脑端工具</h3>
+      <p>Arduino 串口监视器就能玩。想要自动演示或一直发命令，用 Windows 自带的 PowerShell 工具，不依赖 Python：</p>
+      <pre><code>pwsh -File .\tools\serial-console.ps1 -List
+pwsh -File .\tools\serial-console.ps1 -Port COMx
+pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
+      <p><code>-List</code> 列出 CP210x；只有一个时交互模式会自动选。<code>-Demo</code> 会依次跑 PING、INFO、彩虹、TEXT、STREAM、呼吸和绿色，最后把灯留在绿色。</p>
+      <p class="res"><a href="../tools/serial-console.ps1">tools\serial-console.ps1</a> · <a href="../docs/teach/serial-console.md">docs\teach\serial-console.md</a></p>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>后面还能接什么</h3>
+      <ul class="plain">
+        <li><b>舵机</b>：UART1 已经留给 ST3215，下一步加 <code>SERVO ID POS SPEED</code> 命令，串口控制台就能同时管灯、屏幕和机械臂。</li>
+        <li><b>Web Serial</b>：Chrome / Edge（以及 2026 年加入的 Firefox 151）可以让网页直接连 COM 口，做颜色滑杆和实时曲线；页面需要 localhost 或 HTTPS。</li>
+        <li><b>PC 帧流</b>：电脑把 128×32 黑白画面按 512 字节一帧推过来，OLED 当第二屏，灯环跟着画面变色；921600 波特率下能跑到约 30 fps。</li>
+        <li><b>PC 系统监控 / 音频频谱</b>：电脑算 CPU、内存或 FFT，只把结果用 JSON 或小二进制包发过来，板子负责显示和发光。</li>
+      </ul>
     </div>
   </section>
   <footer>

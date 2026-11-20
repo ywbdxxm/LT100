@@ -190,3 +190,9 @@ body:has(dialog[open]){overflow:hidden}
 .mixer-note{font-size:12px; color:var(--muted); margin:6px 0 0}
 .mixer-note code{font-size:11.5px}
 @media (max-width:760px){ .led-figs{grid-template-columns:1fr} .mixer{grid-template-columns:1fr} .mixer-swatch{height:90px} }
+
+/* serial console */
+.serial-flow,.uart-wave{margin:12px 0 10px}
+.serial-flow svg,.uart-wave svg{display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:8px; background:#fff}
+.serial-flow figcaption,.uart-wave figcaption{font-size:12px; color:var(--muted); padding-top:6px; letter-spacing:.02em}
+@media (max-width:600px){ nav .wrap{flex-wrap:wrap; height:auto; padding:8px 0; gap:8px 14px} }
