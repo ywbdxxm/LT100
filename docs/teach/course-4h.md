@@ -106,7 +106,7 @@ lt100-station/
 
 ```yaml
 default_fqbn: esp32:esp32:esp32
-default_port: COM5
+default_port: COMx  # 换成自己机器上的端口
 ```
 
 **IDE 与 CLI 共存的四条规则**：
