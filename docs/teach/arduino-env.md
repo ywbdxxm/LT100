@@ -98,8 +98,8 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
   `core list`、`board listall`、`board details` 均正常。
 - SCServo 升级到 **1.0.2** 后复测同一例程：292265 B / 22% flash，23248 B RAM，exit 0
   （比 1.0.1 少 64 B；1.0.2 的 release notes 仅标注 cleanup，API 未变）。
-  课程 5 个例程（`examples/01`–`05`）同样全部通过：281944 / 287552 / 288296 / 288736 / 351564 B。
-  若离线包内仍是 1.0.1，按 §2 换入 1.0.2 后应重跑一次本节冒烟编译。
+  课程 5 个灯链/OLED 例程（`examples/01`–`05`）在 1.0.1 下全部通过：281944 / 287552 / 288296 / 288736 / 351564 B。
+  离线包现已同步为 1.0.2，并用包内 `SCServo/examples/STSCL/Ping` 复测通过。
 - 2026-11-21 用同一套离线库编译并烧录 `examples/06_oled_warp`（U8g2 星际穿越）
   通过：355703 B / 27% flash，26676 B RAM / 8%，串口上传哈希校验通过。
 - 2026-11-21 同法编译并烧录 `examples/07_oled_cube`（U8g2 旋转立方体）

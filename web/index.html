@@ -358,7 +358,7 @@
         <p>Arduino IDE 本身只带 AVR 板卡。要让 IDE 认识并编译这块板，官方流程需要下面这些组件：</p>
         <ul>
           <li><b>ESP32 开发板支持包</b> <code>esp32 by Espressif Systems</code>（4.0.0）—— xtensa 编译器、烧录工具和 ESP32 底层库；没有它，IDE 里选不到这块板。</li>
-          <li><b>SCServo</b>（IDE 库名 <code>SCSservo</code>）—— 飞特 ST3215 总线舵机控制库。</li>
+          <li><b>SCServo</b>（IDE 库名 <code>SCServo</code>，1.0.2）—— 飞特 ST3215 总线舵机控制库。</li>
           <li><b>Adafruit NeoPixel</b> —— 板载 2 颗加外接 24 颗 WS2812 灯。</li>
           <li><b>Adafruit SSD1306 + GFX + BusIO</b> —— 板载 0.91 寸 OLED 的基础驱动（I2C，0x3C）。</li>
           <li><b>U8g2</b> —— 同一块 OLED 的图形库，06/07 例程用它画星场和线框。</li>
@@ -372,7 +372,7 @@
         <p><b>验证：</b>打开 IDE，确认两项：</p>
         <ul>
           <li><code>Tools → Board</code> 里出现 <b>ESP32 Dev Module</b>；</li>
-          <li><code>File → Examples</code> 里出现 <b>SCSservo</b>、<b>Adafruit SSD1306</b>、<b>U8g2</b>。</li>
+          <li><code>File → Examples</code> 里出现 <b>SCServo</b>、<b>Adafruit SSD1306</b>、<b>U8g2</b>。</li>
         </ul>
         <p><b>范围：</b>这份包只覆盖经典 ESP32（ESP32 Dev Module / ESP32-WROOM-32），只带它的编译器，体积才能压到约 2 GB。其他型号（S3、C3、C6 等）不在包里，选了会编译失败。</p>
 
