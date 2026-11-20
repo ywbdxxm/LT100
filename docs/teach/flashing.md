@@ -3,7 +3,7 @@
 - 日期：2026-11-21
 - 适用：LT100 / 微雪 Servo Driver with ESP32（ESP32-WROOM-32，CP2102）
 - 目标：先花 30 秒判断你这块板属于哪一类，再按对应路线烧；两条路线都能烧成功，区别只在"谁把 IO0 拉低"
-- 结论先说：**烧录有两类**——A 类自动下载（一条 `upload` 命令搞定），B 类必须手动按住 `KEY_FLASH`。本机（COM5，2026-11-21 实测）走 **B 类**；同型号板在另一台机器上可以自动烧录，归属（主机 vs 板子）见 §3。
+- 结论先说：**烧录有两类**——A 类自动下载（一条 `upload` 命令搞定），B 类必须手动按住 `KEY_FLASH`。同一块板子在另一台 Windows 11 上走 A 类，在本机走 **B 类**；差异在主机侧，见 §3。
 
 ## 1. 两条路线一张表
 
@@ -21,15 +21,25 @@
 
 ## 2. 判定：你这块板属于哪一类（30 秒）
 
-不按任何键，只用软件复位，读启动日志：
+不按任何键，只用软件复位，读启动日志（端口改成你自己电脑上的那个）：
 
 ```powershell
-# 串口读取器（本机脚本，见 §9 证据）
-powershell -File C:\Users\ljm75\AppData\Local\Temp\lt100-serial\read.ps1 `
-  -Port COM5 -Baud 115200 -Mode reset-b -Seconds 3
+$port = "COMx"                       # 换成你电脑上的 CP210x 端口
+$p = [System.IO.Ports.SerialPort]::new($port, 115200)
+$p.Open()
+$p.DtrEnable = $false
+$p.RtsEnable = $true
+Start-Sleep -Milliseconds 120        # 拉 RTS = 复位
+$p.RtsEnable = $false
+Start-Sleep -Milliseconds 100
+$buf = ""
+$deadline = (Get-Date).AddMilliseconds(1500)
+while ((Get-Date) -lt $deadline) { $buf += $p.ReadExisting(); Start-Sleep -Milliseconds 40 }
+$p.Close()
+$buf
 ```
 
-看输出第一行：
+看输出里的第一行：
 
 ```text
 rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)   ← A 类：芯片正常启动 app
@@ -40,7 +50,7 @@ waiting for download
 或者直接试一次上传：
 
 ```powershell
-.\resources\arduino-cli\arduino-cli.exe upload --fqbn esp32:esp32:esp32 --port COM5 .\examples\01_blink_rgb
+.\resources\arduino-cli\arduino-cli.exe upload --fqbn esp32:esp32:esp32 --port COMx .\examples\01_blink_rgb
 ```
 
 - 看到 `Connected to ESP32` → **A 类**，照 §6 走。
@@ -82,15 +92,18 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 
 真值表里**不存在 RST=0 且 GPIO0=0 的那一行**，也就是说这块板的电路按图无法同时"按住复位 + 拉低 IO0"。
 
-> **归属尚未定论**：同型号板子在另一台机器上可以自动烧录（用户实测），所以问题可能落在这台机器的 USB 串口栈（驱动对 DTR/RTS 的处理），也可能落在这块板的 IO0 支路。要定论，在**能自动烧录的那台机器**上跑一次：
+> **归属已经缩到"这台机器"**：同一块实物板子在另一台 **Windows 11** 机器上 `arduino-cli upload` 直接自动烧录成功，在这台上则永远 `0x13`。同一块板 + 同一系统版本，说明问题既不在板子，也不在 Windows 版本，而在这台机器的**主机侧**：USB 口/线、CP210x 驱动对 DTR/RTS 的处理、或某个抢占串口的后台程序。
+>
+> 要定位，在**能自动烧录的那台机器**上抓一次 verbose：
 >
 > ```powershell
-> .\resources\arduino-cli\arduino-cli.exe upload --fqbn esp32:esp32:esp32 --port COMx .\examples\01_blink_rgb
+> $esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.3.1\esptool.exe"
+> & $esptool --chip esp32 -p COMx -b 921600 -v --before default-reset chip-id
 > ```
 >
-> 它的 `Connecting...` 段如果直接出现 `Connected to ESP32`，就把两边的 `esptool -v` 日志对比一遍（`-v` 会打印每次 DTR/RTS 的翻转）。
-
-不管结论落在哪边，**本机的可行路线只有 B 类**（§4）：手按 `KEY_FLASH` 提供 IO0 低，软件拉 RTS 产生复位。
+> `-v` 会逐次打印 DTR/RTS 的翻转与同步尝试。两台机器的日志一对比：翻转序列一样 → 差异在电气/端口；序列不一样 → 差异在驱动或工具。
+>
+> 在得出结论前，**本机的可行路线只有 B 类**（§4）：手按 `KEY_FLASH` 提供 IO0 低，软件拉 RTS 产生复位。
 
 **已排除的干扰项**（都实测过，别再重复排障）：
 
@@ -99,7 +112,7 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 | 驱动版本 | 10.1.10.103 / 11.1.0.53 / 11.6.0.420 三个版本，行为完全一致 |
 | Windows USB 省电 | 关掉选择性挂起 + `LatencyTimer=1` 后仍 `0x13` |
 | USB Hub / 扩展坞 | 直插 `USB\ROOT_HUB30\...`，没有外部 Hub |
-| 板子个体 | 换第二块同型号板，同样 `0x13`（MAC `a4:f0:0f:9b:84:7c`） |
+| 板子个体 | 换过另一块同型号实物板，本机同样 `0x13`；同型号板在另一台机器上可自动烧 |
 | 波特率 | 115200 / 921600 都进不去下载模式 |
 
 ## 4. B 类：手动进下载 + 烧录（本机标准流程）
@@ -117,7 +130,7 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 ### 4.2 复位（PowerShell，可直接粘贴）
 
 ```powershell
-$p = [System.IO.Ports.SerialPort]::new('COM5', 115200)
+$p = [System.IO.Ports.SerialPort]::new('COMx', 115200)
 $p.Open()
 $p.DtrEnable = $false          # 别拉 DTR，否则芯片被按在复位态
 $p.RtsEnable = $true
@@ -141,17 +154,21 @@ waiting for download
 `arduino-cli upload` 在这里会失败（它先自己拉 DTR/RTS 想自动进下载），所以直接用 esptool 写预编译的 merged 镜像：
 
 ```powershell
-$esptool = "C:\Users\ljm75\AppData\Local\Arduino15\packages\esp32\tools\esptool_py\5.3.1\esptool.exe"
-& $esptool --chip esp32 -p COM5 -b 921600 `
+# esptool 随 esp32 core 一起装，版本号按你本机目录换
+$esptool = "$env:LOCALAPPDATA\Arduino15\packages\esp32\tools\esptool_py\5.3.1\esptool.exe"
+
+& $esptool --chip esp32 -p COMx -b 921600 `
   --before no-reset --after hard-reset `
   write-flash -z --flash-mode dio --flash-freq 40m --flash-size 4MB `
-  0x0 C:\Users\ljm75\AppData\Local\Temp\lt100-bins\02_rainbow_breathe\02_rainbow_breathe.ino.merged.bin
+  0x0 .\build\02_rainbow_breathe.ino.merged.bin
 ```
+
+`.\build\` 换成你 `compile --output-dir` 的输出目录。
 
 本机成功日志（2026-11-21）：
 
 ```text
-Connected to ESP32 on COM5
+Connected to ESP32 on COMx
 Chip type:          ESP32-D0WD-V3 (revision v3.1)
 Changing baud rate to 921600...
 Wrote 4194304 bytes (188037 compressed) at 0x00000000 in 11.0 seconds (3064.0 kbit/s).
@@ -267,17 +284,18 @@ SCAN done: 3/3 online
 
 回 `0/3` 时：烧录可能已经成功，只是舵机没 12V 或总线/ID 不对；09 上电只读不转，`0/3` 不是烧录失败的证据。也可以发 `HELP`、`LIMITS` 确认固件在跑。
 
-## 9. 证据与脚本（本机，不进 git）
+## 9. 证据与脚本（本机临时目录，不进 git）
+
+排障时在本地 `.tmp-flash/` 下用过这些脚本；不随仓库分发，README 只描述它们做了什么，方便复现：
 
 | 文件 | 作用 |
 |---|---|
-| `.tmp-flash/probe-auto.ps1` | 扫 DTR/RTS 四种组合并读启动日志，用于判定 A/B 类 |
-| `.tmp-flash/rts-reset.ps1` | 只做"拉 RTS 120 ms 复位"这一个动作 |
-| `C:\Users\ljm75\AppData\Local\Temp\lt100-serial\read.ps1` | 串口读取；`-Mode reset-b` 用 RTS 复位并抓启动日志 |
-| `.tmp-flash/flash-one.sh` | 循环：复位 → 确认 `waiting for download` → stub 921600 写入 |
-| `.tmp-flash/flash-01.log` / `flash-02.log` / `flash-fast.log` | 各次烧录原始日志 |
+| `probe-seq.ps1` | 保持串口打开，按不同次序拨 DTR/RTS，每步读启动日志，用于判定 A/B 类 |
+| `rts-reset.ps1` | 只做"拉 RTS 120 ms 复位"这一个动作 |
+| `flash-one.sh` | 循环：复位 → 确认 `waiting for download` → stub 921600 写入 |
+| `flash-01.log` / `flash-02.log` / `flash-fast.log` | 各次烧录原始日志（端口号已脱敏为 `COMx`） |
 
-`esptool` 路径：`C:\Users\ljm75\AppData\Local\Arduino15\packages\esp32\tools\esptool_py\5.3.1\esptool.exe`（`arduino-cli` 用的就是它，`platform.txt` 里 `tools.esptool_py.cmd=esptool`）。
+`esptool` 就在 esp32 core 里：`%LOCALAPPDATA%\Arduino15\packages\esp32\tools\esptool_py\<版本>\esptool.exe`——`arduino-cli` 用的就是它（`platform.txt` 里 `tools.esptool_py.cmd=esptool`），所以两条路线的底层工具是同一个。
 
 ## 10. 安全
 
