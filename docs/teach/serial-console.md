@@ -130,12 +130,33 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 
 脚本用 `System.IO.Ports.SerialPort`，读超时 200ms；`STREAM` 每秒一条也能连续读。Ctrl+C 或输入 `quit` 退出，`finally` 会关闭端口。
 
+### 6.1 网页控制台（Web Serial）
+
+不想开 Arduino，也不想装串口工具时，用浏览器页面：
+
+```text
+双击 start-web-console.bat
+  → 打开 http://127.0.0.1:8770/web/serial.html
+  → 点「连接串口」
+  → 在浏览器弹窗里选 CP210x 的 COM 口
+```
+
+页面提供：串口日志、命令输入、灯环模式、颜色、亮度、OLED 文字、`PING`/`INFO`/`STAT`/`STREAM` 快捷按钮，以及运行时间、空闲内存、收发计数等状态卡。
+
+- 需要 **Chrome / Edge 89+**，或 **Firefox 151+**；Safari 不支持。
+- Web Serial 要求安全上下文，所以必须从 `http://127.0.0.1` 或 HTTPS 打开，**不能直接双击 `serial.html`**。
+- `tools/web-console.ps1` 是本地静态服务器，`start-web-console.bat` 只是双击入口；不依赖 Python/Node。
+- 页面支持 `serial.html?mock=1` 演示模式：不连真实串口，用页面模拟 08 的回复，方便预览 UI。
+- 同一时间只能有一个程序占用 COM 口；用网页控制台前先关掉 Arduino 串口监视器和 PowerShell 工具。
+
 ## 7. 实测
 
 - 编译：`353988 B / 27% flash`，`26028 B / 7% RAM`，exit 0。
 - 烧录：串口写入后 `Hash of data verified`。
 - 协议测试：`PING`、`INFO`、`STAT`、`MODE RAINBOW`、`COLOR`、`BRIGHT`、`TEXT`、`STREAM 1`、`STREAM 0`、`CLEAR` 均按预期；`SERVO` 返回 `ERR 04`，未知命令返回 `ERR 01`，120 字节超长行返回 `ERR 05`。
 - 边界测试：`BRIGHT 41`、`COLOR XYZ`、`TEXT "bad"` 返回错误，`STAT` 确认之前的颜色/亮度没有被改掉。
+- 网页控制台用 `?mock=1` 验证了连接、PING/STAT、模式、颜色、亮度、TEXT、STREAM 和断开；真实 Web Serial 需要用户在浏览器弹窗里手动选串口。
+- `tools/web-console.ps1` 在 8773 端口实测：`/web/serial.html`、`/web/serial.js`、`/docs/teach/serial-console.md` 均返回 200。
 - 原始日志在 `LT100/.local/serial-test-08-*.log`，不进 git。
 
 ## 8. 排错
@@ -155,4 +176,4 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 - `SERVO` 命令：接 UART1 和 `SMS_STS`，例如 `SERVO 1 2048 1000`。
 - 电脑端二进制帧流：OLED 当第二屏，灯环跟着画面变色。
 - PC 系统监控 / 音频频谱：电脑算 CPU、内存或 FFT，板子只负责显示和发光。
-- Web Serial 面板：浏览器直接连 COM 口，不装 Python（需要 localhost/HTTPS）。
+- Web Serial 控制台已实现：`web/serial.html`，从 `start-web-console.bat` 启动。

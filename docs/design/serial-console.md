@@ -80,7 +80,7 @@ OK color=#FF6600
 
 - **主路径**：Arduino IDE 串口监视器，115200，行尾选 **Newline**；开箱即用。
 - **加分项**：`tools/serial-console.ps1`，用 Windows 自带 .NET `SerialPort`，自动列 COM 口，提供交互输入和 `-Demo` 脚本；不依赖 Python/pyserial。
-- 不在本阶段做 Web Serial 页面；浏览器方案留到下一弹，避免额外本地服务器依赖。
+- **网页控制台（追加）**：`web/serial.html` + `web/serial.js`，用浏览器 Web Serial 直连 COM 口；`tools/web-console.ps1` 提供 localhost 静态服务器，`start-web-console.bat` 一键启动。需要 Chrome / Edge 89+ 或 Firefox 151+，不能在 `file://` 下用。
 
 ## 6. 网页与文档
 
@@ -98,11 +98,13 @@ OK color=#FF6600
 2. 用串口工具依次发 `PING`、`INFO`、`STAT`、`MODE RAINBOW`、`COLOR FF6600`、`BRIGHT 20`、`TEXT HELLO`、`STREAM 1`、未知命令；逐条核对回复。
 3. 确认 OLED 三行随命令变化，灯环模式和板载 RX/TX 闪烁正确。
 4. 用 `STREAM 1` 连续收 10 条 JSON，确认无丢行/乱码。
-5. 证据日志放 `LT100/.local/`；网页和文档用 `COMx`，不写具体端口。
+5. 网页控制台在 localhost 下连接 CP210x，确认 PING、灯环、颜色、亮度、TEXT、STAT/STREAM 正常；`?mock=1` 用页面模拟验证 UI。
+6. 证据日志放 `LT100/.local/`；网页和文档用 `COMx`，不写具体端口。
 
 ## 8. 非目标
 
-- 本阶段不实现舵机运动、不占用 UART1、不做 Web Serial、不做二进制帧流。
+- 本阶段不实现舵机运动、不占用 UART1、不做二进制帧流。
+- Web Serial 已作为追加实现（`web/serial.html`），不属于 08 固件本体。
 - 不在 OLED 上显示中文。
 - 不追求毫秒级实时性；先保证协议清楚、交互稳定、学生能改。
 

@@ -210,6 +210,7 @@
                 <li><span class="dir">design/</span>
                   <ul>
                     <li><span class="file">design.md</span><span class="what">设计与规格：定位、架构、硬件契约</span></li>
+                    <li><span class="file">serial-console.md</span><span class="what">串口控制台设计：命令、协议、验收</span></li>
                   </ul>
                 </li>
                 <li><span class="dir">build/</span>
@@ -222,6 +223,7 @@
                     <li><span class="file">course-4h.md</span><span class="what">四小时课：硬件装配线 / AI Agent 线</span></li>
                     <li><span class="file">arduino-env.md</span><span class="what">学生机离线环境：安装、验证、agent 执行说明</span></li>
                     <li><span class="file">kinematics-and-force.md</span><span class="what">3R 平面臂运动学与力学：FK/IK、工作空间、力臂与电流、7 个实验</span></li>
+                    <li><span class="file">serial-console.md</span><span class="what">串口控制台：命令表、UART 原理、排错</span></li>
                   </ul>
                 </li>
                 <li><span class="dir">reference/</span>
@@ -250,6 +252,7 @@
                 </li>
               </ul>
             </li>
+            <li><span class="file">start-web-console.bat</span><span class="what">启动网页串口控制台（localhost）</span></li>
             <li><span class="dir">examples/</span>
               <ul>
                 <li><span class="dir">01_blink_rgb/</span><span class="what">第一个例程：板载 RGB 闪烁</span>
@@ -305,10 +308,14 @@
             <li><span class="dir">tools/</span>
               <ul>
                 <li><span class="file">serial-console.ps1</span><span class="what">串口控制台（PowerShell，免 Python）</span></li>
+                <li><span class="file">web-console.ps1</span><span class="what">本地静态服务器，给 Web Serial 提供 localhost</span></li>
               </ul>
             </li>
             <li><span class="dir">web/</span>
               <ul>
+                <li><span class="file">serial.html</span><span class="what">网页串口控制台（Web Serial）</span></li>
+                <li><span class="file">serial.css</span><span class="what">控制台样式</span></li>
+                <li><span class="file">serial.js</span><span class="what">Web Serial 连接、命令和遥测</span></li>
                 <li><span class="dir">assets/</span>
                   <ul>
                     <li><span class="file">board-*.jpg</span><span class="what">官网产品图，本页配图</span></li>
@@ -973,6 +980,10 @@ OK color=#FF6600
 {"type":"stat","up_ms":19720,"heap":321452,"rx":67,"tx":362,"cmds":8,"mode":"SOLID","color":"#FF6600","bright":20,"text":""}</code></pre>
       <p class="sub" style="margin:6px 0 0"><code>STAT</code> 字段：<code>up_ms</code> 运行毫秒、<code>heap</code> 空闲内存、<code>rx</code>/<code>tx</code> 收/发字节、<code>cmds</code> 命令数、<code>mode</code>/<code>color</code>/<code>bright</code> 灯状态、<code>text</code> 当前文字。亮度上限 40%，是 50 颗灯全白时板载 5V 约 1A 的余量；<code>TEXT</code> 最多 20 个 ASCII 字符，中文需要额外字体。</p>
       <p class="res"><a href="../examples/08_serial_console/08_serial_console.ino">examples\08_serial_console\08_serial_console.ino</a></p>
+    </div>
+
+    <div class="note">
+      <b>网页控制台：</b>不用串口工具，也不用 Python。双击 <code>start-web-console.bat</code>，浏览器会打开 <code>http://127.0.0.1:8770/web/serial.html</code>；点「连接串口」选 CP210x 就能用。需要 Chrome / Edge（或 Firefox 151+），不能直接双击 HTML。<a href="serial.html">打开控制台 →</a>
     </div>
 
     <div class="two">
