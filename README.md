@@ -27,8 +27,8 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 4 小时课（A 装配线 / B AI Agent 线）：[docs/teach/course-4h.md](docs/teach/course-4h.md)
 - 运动学与力学（FK/IK、工作空间、力臂与电流、7 个实验）：[docs/teach/kinematics-and-force.md](docs/teach/kinematics-and-force.md)
 - 学生机离线 Arduino 环境（安装/验证/agent 执行）：[docs/teach/arduino-env.md](docs/teach/arduino-env.md)
-- 烧录两条路线（A 自动下载 / B 必须手动按住 KEY_FLASH，含判定与实测排障）：[docs/teach/flashing.md](docs/teach/flashing.md)
-- 烧录现象对照实验（两台 Windows 11 + 同一块板，一键采集 DTR/RTS 日志）：[docs/teach/flashing-crosscheck.md](docs/teach/flashing-crosscheck.md)，脚本 [tools/flash-probe.ps1](tools/flash-probe.ps1)
+- 烧录（课堂：人用 IDE 按住 BOOT；含 921600、验证与进阶 merged 镜像）：[docs/teach/flashing.md](docs/teach/flashing.md)
+- 自动下载对照实验（**内部排查记录**，学生不用看）：[docs/teach/flashing-crosscheck.md](docs/teach/flashing-crosscheck.md)，脚本 [tools/flash-probe.ps1](tools/flash-probe.ps1)
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
 - 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
 - 网页串口控制台（Web Serial）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动

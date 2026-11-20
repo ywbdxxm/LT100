@@ -1,9 +1,13 @@
-# LT100 烧录现象对照实验（两台 Windows 11，同一块板）
+# LT100 自动下载对照实验（内部排查记录）
+
+> **这是内部资料，不是学生操作步骤。** 学生只需看 [flashing.md](flashing.md) 的“先自动，失败按 BOOT”。
+>
+> **当前结论（2026-11-21）：不再把“自动下载为什么失败”当作必修项。** 自动失败是少数主机/线材/工具组合的正常差异；能按 BOOT 烧进去就继续上课。本文件保留给老师/维护者，将来想继续定位时按这里的脚本采集即可。
 
 - 日期：2026-11-21
-- 背景：**同一块实物板**，在 A 机（另一台 Windows 11）上 `arduino-cli upload` 直接自动烧录成功；在 B 机（本仓库当前这台）上永远报
+- 背景：**同一块实物板**，在 A 机（另一台 Windows 11）上 `arduino-cli upload` 直接自动烧录成功；在 B 机（本仓库当前这台）上报
   `Failed to connect to ESP32: Wrong boot mode detected (0x13)!`
-- 目的：用同一套脚本、同一块板、同一根线，把两台机器上的 **DTR/RTS 翻转序列** 和 **结果** 全部录下来，逐行对比，定位差异到底在哪一层
+- 目的：用同一套脚本、同一块板、同一根线，把两台机器上的自动连接结果和补充序列录下来，给后续排查留证据
 - 执行方式：在 **A 机**上按本文件跑一遍，把生成的报告目录整个发回；B 机的报告已按同样方法生成
 
 > **2026-11-21 A 机实测后的判读校正（先看这三条）**
@@ -18,7 +22,7 @@
 
 ```text
 flashing-report\
-  summary.txt               ← 先看这个，人眼可读的结论汇总
+  summary.txt               ← 快速汇总；结论仍以 raw log 为准
   logs\
     serial-ports.txt        ← 端口枚举
     driver.txt              ← CP210x 驱动版本/日期/INF
@@ -122,9 +126,9 @@ A 机的 CP210x 还**不是直插 root hub**：它接在一个 Genesys Logic 的
 - 在 B 机上把板子接到一个 **USB 2.0 Hub** 或 **USB 2.0 端口**（黑色口），再跑 `flash-probe.ps1 -SkipUpload`；
 - 如果变成 `AUTO-OK`，差异就在 USB 主控制器/Hub 对 DTR/RTS 控制传输的时序处理，而不是板子或驱动版本。
 
-## 6. 如果确认必须手动（B 类）
+## 6. 如果确认必须手动
 
-手动路线见 [flashing.md §4](flashing.md)：按住 `KEY_FLASH`，由脚本/工具拉一次 RTS 复位，读到 `waiting for download` 后再用 esptool 写 merged 镜像。这条路在 B 机上已经验证可用（stub + 921600，4 MB 约 11 秒）。
+手动路线见 [flashing.md §3](flashing.md)：按住 `KEY_FLASH`，由脚本/工具拉一次 RTS 复位，读到 `waiting for download` 后再用 esptool 写 merged 镜像。这条路在 B 机上已经验证可用（stub + 921600，4 MB 约 11 秒）。
 
 ## 7. 回传内容清单
 

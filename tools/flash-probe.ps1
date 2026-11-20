@@ -1,4 +1,5 @@
 # flash-probe.ps1 -- collect evidence for "auto download works / does not work" comparison.
+# Internal diagnostic only. Student flashing guide: docs/teach/flashing.md (auto first, BOOT fallback).
 # ASCII only (PowerShell 5.1 safe). Does NOT erase flash and does NOT change partition layout.
 #
 # Usage:
