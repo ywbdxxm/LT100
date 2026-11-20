@@ -225,6 +225,7 @@
                   <ul>
                     <li><span class="file">course-4h.md</span><span class="what">四小时课：硬件装配线 / AI Agent 线</span></li>
                     <li><span class="file">arduino-env.md</span><span class="what">学生机离线环境：安装、验证、agent 执行说明</span></li>
+                    <li><span class="file">flashing.md</span><span class="what">烧录流程：CLI/IDE、921600、手动 BOOT、验证</span></li>
                     <li><span class="file">kinematics-and-force.md</span><span class="what">3R 平面臂运动学与力学：FK/IK、工作空间、力臂与电流、7 个实验</span></li>
                     <li><span class="file">serial-console.md</span><span class="what">串口控制台：命令表、UART 原理、排错</span></li>
                     <li><span class="file">servo-basic.md</span><span class="what">舵机基础：闭环、总线、逐关节标定与限位</span></li>
@@ -630,6 +631,7 @@
         <p>点左上角 <b>→</b>（或 <code>Ctrl+U</code>）上传，第一次编译约 1–2 分钟。看到 <code>Done uploading</code> 后，两颗灯红蓝交替亮 0.4 秒、灭 0.2 秒；只点板载灯，USB 供电就够。</p>
         <p>失败先关串口监视器；还失败就把 <code>Tools → Upload Speed</code> 降到 115200 再试。ESP32 Dev Module 默认上传是 <b>921600</b>；串口监视器的 115200 是应用串口，两者不是同一个波特率。</p>
         <p><b>一直卡在 <code>Connecting...</code>：</b>手动进下载模式——按住 <b>BOOT</b>（KEY_FLASH/IO0）→ 点一下 <b>EN</b>（复位）→ 松开 BOOT → 点上传；上传完按一下 EN 运行。烧录只需要 USB，12V 可以先关掉。</p>
+        <p class="res"><a href="../docs/teach/flashing.md">docs\teach\flashing.md</a>：完整烧录流程、921600、自动下载失败与手动 BOOT。</p>
         <p>改颜色、速度、亮度都在文件顶部的常量和 <code>leds.Color()</code> 里。接一个灯环 <code>LED_COUNT</code> 改 26，两个改 50；亮度不超过 40。</p>
       </div>
     </div>

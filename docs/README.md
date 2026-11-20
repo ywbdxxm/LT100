@@ -11,6 +11,7 @@ docs/
 ├── teach/            教学
 │   ├── course-4h.md
 │   ├── arduino-env.md
+│   ├── flashing.md
 │   ├── kinematics-and-force.md
 │   ├── serial-console.md
 │   └── servo-basic.md
@@ -27,6 +28,7 @@ docs/
 | [build/purchase-list.md](build/purchase-list.md) | 30 套实付台账（¥4342.94） | 对账、报销 |
 | [teach/course-4h.md](teach/course-4h.md) | 4 小时课：A 装配线 / B AI Agent 线 | 备课、上课 |
 | [teach/arduino-env.md](teach/arduino-env.md) | 学生机离线 Arduino 环境：资源、安装、验证、agent 执行说明 | 装机、排障 |
+| [teach/flashing.md](teach/flashing.md) | 烧录全流程：CLI/IDE、921600、自动下载失败、手动 BOOT、验证 | 烧录、排障 |
 | [teach/kinematics-and-force.md](teach/kinematics-and-force.md) | 3R 平面臂运动学（FK/IK/工作空间/误差）+ 静力学（力臂/电流/柔顺）+ 7 个课堂实验 | 备物理课、讲原理 |
 | [teach/serial-console.md](teach/serial-console.md) | 串口控制台：UART 参数、命令表、OLED/灯行为、主机工具 | 学串口、改命令 |
 | [teach/servo-basic.md](teach/servo-basic.md) | 舵机基础：闭环、总线、逐关节标定与限位、09 例程 | 学舵机、标定限位 |

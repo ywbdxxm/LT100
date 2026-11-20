@@ -27,6 +27,7 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 4 小时课（A 装配线 / B AI Agent 线）：[docs/teach/course-4h.md](docs/teach/course-4h.md)
 - 运动学与力学（FK/IK、工作空间、力臂与电流、7 个实验）：[docs/teach/kinematics-and-force.md](docs/teach/kinematics-and-force.md)
 - 学生机离线 Arduino 环境（安装/验证/agent 执行）：[docs/teach/arduino-env.md](docs/teach/arduino-env.md)
+- 烧录流程（Arduino CLI/IDE、921600、自动下载失败、手动 BOOT）：[docs/teach/flashing.md](docs/teach/flashing.md)
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
 - 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
 - 网页串口控制台（Web Serial）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
