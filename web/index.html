@@ -789,13 +789,17 @@
     <h2><span class="n">再进一步</span>串口：让电脑接管</h2>
     <p class="sub">前面都是板子自己跑；这一节让电脑发命令，板子用 OLED、灯环和回包回应。串口也是后面接舵机的入口。</p>
 
+    <div class="note">
+      <b>一句话：</b>串口是电脑和板子之间的一条“很窄的双向管道”：一次传一位 0/1，8 位拼成一个字节，字节拼成字符，字符拼成一行命令。电脑发命令，板子执行，再沿原路回话。
+    </div>
+
     <div class="two">
       <div class="box">
         <h3>先认三个东西</h3>
         <ul class="plain">
-          <li><b>USB 转串口 CP2102</b>：电脑没有 UART 引脚，靠这颗芯片把 USB 变成串口。</li>
-          <li><b>TX / RX</b>：两根单向线。电脑的 TX 接板子的 RX，板子的 TX 接电脑的 RX。</li>
-          <li><b>波特率</b>：每秒传多少位。两边必须一样，这里用 <code>115200</code>。</li>
+          <li><b>USB 转串口 CP2102</b>：ESP32 的 UART 只会收发 0/1 电平，不会说 USB；CP2102 把 USB 翻译成 UART。电脑上看到的 <code>COMx</code> 就是它。</li>
+          <li><b>TX / RX</b>：两根单向信号线，外加共同的地 GND。电脑 TX → 板子 RX，板子 TX → 电脑 RX；GND 共地，USB 线里已经带了。</li>
+          <li><b>波特率</b>：每秒传多少位，两边必须一致。这里用 <code>115200</code>；8N1 下一字节约 10 位，约 11.5 KB/s。</li>
         </ul>
       </div>
       <div class="box">
@@ -831,8 +835,8 @@
 
         <line x1="380" y1="100" x2="438" y2="100" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
         <line x1="438" y1="130" x2="380" y2="130" stroke="#5f5952" stroke-width="1.5" marker-end="url(#serial-arrow)"></line>
-        <text x="409" y="90" text-anchor="middle" font-size="10.5" fill="#5f5952">TX</text>
-        <text x="409" y="148" text-anchor="middle" font-size="10.5" fill="#5f5952">RX</text>
+        <text x="409" y="90" text-anchor="middle" font-size="10.5" fill="#5f5952">TX → RX</text>
+        <text x="409" y="148" text-anchor="middle" font-size="10.5" fill="#5f5952">RX ← TX</text>
         <text x="400" y="170" text-anchor="middle" font-size="10" fill="#5f5952">GPIO1/3</text>
 
         <rect x="440" y="55" width="150" height="130" rx="10" fill="#fff" stroke="#e7e2da" stroke-width="1.5"></rect>
@@ -854,20 +858,25 @@
         <path d="M515 185 V218 H95 V170" stroke="#b23c07" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#serial-arrow-accent)"></path>
         <text x="305" y="232" text-anchor="middle" font-size="10.5" fill="#b23c07">OK / PONG / STAT 回电脑</text>
       </svg>
-      <figcaption>电脑通过 CP2102 把 USB 变成 UART0；ESP32 收到命令后更新屏幕和灯，再把结果沿原路发回电脑。</figcaption>
+      <figcaption>电脑的 TX 接 ESP32 的 RX，ESP32 的 TX 接电脑的 RX；CP2102 在中间把 USB 翻译成 UART。收到命令后，ESP32 更新屏幕和灯，再把结果沿原路发回电脑。</figcaption>
     </figure>
 
     <div class="two">
       <div class="box">
         <h3>电脑发的是什么</h3>
-        <p>不是“串口信号”四个字，而是一串字节。例程把一行文字当一条命令，行尾用换行符 <code>\n</code> 结束；所以串口监视器要选 <b>Newline</b>。</p>
-        <p>命令本身是 ASCII：<code>C</code> 是 0x43，<code>O</code> 是 0x4F……板子逐个字节收，凑满一行再解析。</p>
+        <p>你在串口监视器里敲的每个字符，都会先变成 ASCII 字节。例如 <code>PING</code> 是 <code>50 49 4E 47</code>，再补一个换行 <code>0A</code>；板子收到换行才认为“这一行说完了”。</p>
+        <p>所以行尾要选 <b>Newline</b>。不发换行，板子会一直等，命令不会执行。</p>
       </div>
       <div class="box">
         <h3>板子怎么回</h3>
-        <p>成功回 <code>OK ...</code>，失败回 <code>ERR 码 说明</code>；<code>PING</code> 回 <code>PONG 毫秒数</code>；<code>INFO</code> / <code>STAT</code> 回一行 JSON，电脑可以直接解析。</p>
-        <p><code>STREAM 1</code> 打开后每秒自动回一条 <code>STAT</code>，用来做实时曲线或监控。</p>
+        <p>回复也按行：成功 <code>OK ...</code>，失败 <code>ERR 码 说明</code>；<code>PING</code> 回 <code>PONG 毫秒数</code>；<code>INFO</code> / <code>STAT</code> 回一行 JSON。</p>
+        <p><code>STREAM 1</code> 打开后每秒自动回一条 <code>STAT</code>，用来做实时曲线或监控；它只走串口，不抢 OLED 上刚才那条回复。</p>
       </div>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>以 <code>COLOR FF6600</code> 为例</h3>
+      <p>电脑发 <code>COLOR FF6600\n</code> → 板子收齐一行 → 分出命令 <code>COLOR</code> 和参数 <code>FF6600</code> → 转成 R=255、G=102、B=0 → 切到单色模式 → 灯环变橙色，OLED 第一行变 <code>M:SOLID B:20</code> → 最后回 <code>OK color=#FF6600</code>。</p>
     </div>
 
     <figure class="uart-wave">
@@ -914,9 +923,32 @@
       <figcaption>UART 没有时钟线：先发一个低电平起始位，再发 8 个数据位（低位先发），最后拉高停止位。收方按同一个波特率采样。</figcaption>
     </figure>
 
+    <div class="box" style="margin-top:12px">
+      <h3>这张波形怎么读</h3>
+      <ol class="plain">
+        <li>没有数据时，线保持高电平，叫空闲。</li>
+        <li>先拉低一位，叫起始位，告诉对方“准备收”。</li>
+        <li>接着 8 位数据，低位先发；收方在每一位中间采样。</li>
+        <li>最后拉高一位停止位，回到空闲；下一个字节再重复。</li>
+      </ol>
+      <pre>起始  bit0 bit1 bit2 bit3 bit4 bit5 bit6 bit7  停止
+ 0     1    0    0    0    0    0    1    0     1</pre>
+      <p>这 8 位按低位先发读回来是 <code>0100 0001</code>，也就是 <code>0x41</code>，ASCII 字符 <code>A</code>。115200 8N1 下，一个字节连头带尾约 10 位，约 86.8µs；每秒最多约 11.5KB 有效数据。</p>
+      <p class="sub" style="margin:6px 0 0">8N1 = 8 个数据位、无校验（N）、1 个停止位。两边波特率不一致时，收方会在错误的位置采样，看到的就是乱码。</p>
+    </div>
+
     <div class="box">
       <h3>例程：串口控制台</h3>
-      <p>打开 <code>examples\08_serial_console\08_serial_console.ino</code>，上传后打开串口监视器：<b>115200</b>、行尾 <b>Newline</b>。OLED 变成三行仪表盘，灯环执行命令，板载 0/1 号灯分别闪 RX/TX。</p>
+      <p>这个例程把前面几节接起来：串口收命令，OLED 显示，灯环执行，板子回包。按顺序做：</p>
+      <ol class="steps">
+        <li><b>打开例程</b><span><code>examples\08_serial_console\08_serial_console.ino</code></span></li>
+        <li><b>选板子和端口</b><span>ESP32 Dev Module；<code>Tools → Port</code> 选 CP210x 对应的 COMx。</span></li>
+        <li><b>上传</b><span>上传会覆盖当前固件；先关掉串口监视器，避免端口被占。</span></li>
+        <li><b>打开串口监视器</b><span><b>115200</b>，行尾选 <b>Newline</b>（或 Both NL &amp; CR）。</span></li>
+        <li><b>先发 PING</b><span>看到 <code>PONG 12345</code>，说明电脑 → 板子 → 电脑整条链路通了。</span></li>
+        <li><b>再玩灯和屏幕</b><span><code>MODE RAINBOW</code>、<code>COLOR FF6600</code>、<code>BRIGHT 20</code>、<code>TEXT HELLO</code>。</span></li>
+        <li><b>看实时状态</b><span><code>STAT</code> 回一条 JSON；<code>STREAM 1</code> 每秒自动回，<code>STREAM 0</code> 关。</span></li>
+      </ol>
       <table>
         <tr><th>命令</th><th>作用</th><th>示例回复</th></tr>
         <tr><td><code>HELP</code></td><td>列出命令</td><td><code>OK commands: ...</code></td></tr>
@@ -931,13 +963,14 @@
         <tr><td><code>STREAM 0 / 1</code></td><td>每秒自动发 STAT</td><td><code>OK stream=1</code></td></tr>
         <tr><td><code>SERVO ...</code></td><td>预留，后续接舵机</td><td><code>ERR 04 servo not enabled</code></td></tr>
       </table>
+      <p class="sub" style="margin:6px 0 0">命令大小写不敏感，单行最长 96 字节。错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>04</code> 未启用 · <code>05</code> 行太长。</p>
       <pre style="margin-top:12px"><code>&gt; PING
 PONG 12345
 &gt; COLOR FF6600
 OK color=#FF6600
 &gt; STAT
 {"type":"stat","up_ms":19720,"heap":321452,"rx":67,"tx":362,"cmds":8,"mode":"SOLID","color":"#FF6600","bright":20,"text":""}</code></pre>
-      <p class="sub" style="margin:6px 0 0">亮度上限 40%，是 50 颗灯全白时板载 5V 约 1A 的余量；<code>TEXT</code> 最多 20 个 ASCII 字符，中文需要额外字体。</p>
+      <p class="sub" style="margin:6px 0 0"><code>STAT</code> 字段：<code>up_ms</code> 运行毫秒、<code>heap</code> 空闲内存、<code>rx</code>/<code>tx</code> 收/发字节、<code>cmds</code> 命令数、<code>mode</code>/<code>color</code>/<code>bright</code> 灯状态、<code>text</code> 当前文字。亮度上限 40%，是 50 颗灯全白时板载 5V 约 1A 的余量；<code>TEXT</code> 最多 20 个 ASCII 字符，中文需要额外字体。</p>
       <p class="res"><a href="../examples/08_serial_console/08_serial_console.ino">examples\08_serial_console\08_serial_console.ino</a></p>
     </div>
 
@@ -947,12 +980,12 @@ OK color=#FF6600
         <pre><code>M:SOLID B:20
 &gt; COLOR FF6600
 OK color=#FF6600</code></pre>
-        <p style="margin:8px 0 0">第一行模式 + 亮度，第二行最后命令，第三行最后回复；<code>TEXT</code> 有效时第三行显示文字。</p>
+        <p style="margin:8px 0 0">第一行模式 + 亮度，第二行最后命令，第三行最后回复；<code>TEXT</code> 显示 5 秒，之后回到最后回复，<code>CLEAR</code> 可以提前清。</p>
       </div>
       <div class="box">
         <h3>灯环 + RX/TX</h3>
         <p>灯环按 <code>MODE</code> 做环境光；<code>LED_COUNT = 50</code> 是板载 2 + 两个 24 灯环。只接一个也能跑，不接灯环就只有板载 2 颗。</p>
-        <p>板载 0 号灯闪 <b>RX</b>（收到字节），1 号灯闪 <b>TX</b>（发出数据）。<code>MODE OFF</code> 只关环境光，RX/TX 仍保留。</p>
+        <p>板载 0 号灯闪 <b>RX</b>（收到字节），1 号灯闪 <b>TX</b>（发出数据）。发一条 <code>PING</code>，会先看到 0 号灯闪一下，再看到 1 号灯闪一下；<code>MODE OFF</code> 只关环境光，RX/TX 仍保留。</p>
       </div>
     </div>
 
@@ -963,7 +996,23 @@ OK color=#FF6600</code></pre>
 pwsh -File .\tools\serial-console.ps1 -Port COMx
 pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
       <p><code>-List</code> 列出 CP210x；只有一个时交互模式会自动选。<code>-Demo</code> 会依次跑 PING、INFO、彩虹、TEXT、STREAM、呼吸和绿色，最后把灯留在绿色。</p>
+      <p class="sub" style="margin:6px 0 0">如果提示“禁止运行脚本”，把命令换成 <code>powershell -ExecutionPolicy Bypass -File .\tools\serial-console.ps1 ...</code>，或让学生机上的 agent 处理。</p>
       <p class="res"><a href="../tools/serial-console.ps1">tools\serial-console.ps1</a> · <a href="../docs/teach/serial-console.md">docs\teach\serial-console.md</a></p>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>发命令没反应？先查这几件事</h3>
+      <table>
+        <tr><th>现象</th><td>先检查</td></tr>
+        <tr><td>命令发了没反应</td><td>行尾是不是 <b>Newline</b>；先发 <code>HELP</code> 看板子是否在线</td></tr>
+        <tr><td>一打开监视器就重启</td><td>CP2102 的 DTR/RTS 自动复位，正常；等启动横幅出来再发命令</td></tr>
+        <tr><td>COM 口列表没有板子</td><td>装 CP210x 驱动；换一根能传数据的 USB-C 线</td></tr>
+        <tr><td>每台电脑 COM 号不同</td><td>看设备管理器；文档里写 <code>COMx</code>，不要照抄别人的端口</td></tr>
+        <tr><td>中文 <code>TEXT</code> 不显示</td><td>只支持 ASCII；中文要换字体</td></tr>
+        <tr><td>灯不亮 / 很暗</td><td>检查 <code>BRIGHT 0..40</code>、<code>MODE</code>、<code>COLOR</code></td></tr>
+        <tr><td>端口被占用</td><td>关掉其他串口监视器或工具，同一时间只开一个</td></tr>
+        <tr><td>上传失败</td><td>关串口监视器，确认 COM 口；必要时按 BOOT 再试</td></tr>
+      </table>
     </div>
 
     <div class="box" style="margin-top:12px">
