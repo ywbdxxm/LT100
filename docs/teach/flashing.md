@@ -103,6 +103,8 @@ RTS ──R6 12K── VT2(S8050) ── IO0
 >
 > `-v` 会逐次打印 DTR/RTS 的翻转与同步尝试。两台机器的日志一对比：翻转序列一样 → 差异在电气/端口；序列不一样 → 差异在驱动或工具。
 >
+> 一键采集脚本与完整判读表见 [flashing-crosscheck.md](flashing-crosscheck.md)（`tools\flash-probe.ps1`）。
+>
 > 在得出结论前，**本机的可行路线只有 B 类**（§4）：手按 `KEY_FLASH` 提供 IO0 低，软件拉 RTS 产生复位。
 
 **已排除的干扰项**（都实测过，别再重复排障）：
