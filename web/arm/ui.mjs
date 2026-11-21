@@ -7,7 +7,7 @@ const JOINT_NAMES = ["J1 肩", "J2 肘", "J3 腕"];
 const fmt = (value, digits = 1) =>
   Number.isFinite(value) ? value.toFixed(digits) : "—";
 
-export function createUi({ onStop, onRetry }) {
+export function createUi({ onStop, onRetry, onTorque }) {
   const cards = JOINT_NAMES.map((name) => {
     const card = document.createElement("div");
     card.className = "joint";
@@ -40,6 +40,14 @@ export function createUi({ onStop, onRetry }) {
     "cursor:pointer;font:inherit;font-size:12px;";
   retry.addEventListener("click", () => onRetry?.());
   hud.append(retry);
+
+  const torque = document.createElement("button");
+  torque.type = "button";
+  torque.textContent = "上力（保持当前姿态）";
+  torque.hidden = true;
+  torque.style.cssText = retry.style.cssText;
+  torque.addEventListener("click", () => onTorque?.());
+  hud.append(torque);
 
   const el = {
     conn: $("conn"),
@@ -125,7 +133,7 @@ export function createUi({ onStop, onRetry }) {
     if (view.readOnly !== undefined && view.readOnly !== lastReadOnly) {
       lastReadOnly = view.readOnly;
       el.stop.disabled = view.readOnly;
-      el.stop.textContent = view.readOnly ? "STOP · M4" : "STOP";
+      el.stop.textContent = "STOP";
       el.stop.style.opacity = view.readOnly ? "0.55" : "1";
       el.stop.style.cursor = view.readOnly ? "not-allowed" : "pointer";
     }
@@ -133,6 +141,7 @@ export function createUi({ onStop, onRetry }) {
       retry.hidden = !view.retry;
       retry.textContent = view.retry === "retry" ? "重试连接" : "连接串口";
     }
+    if (view.torqueAvailable !== undefined) torque.hidden = !view.torqueAvailable;
 
     // Keep the joint cards clear of a HUD that grew (gate/list/error lines).
     $("joints").style.top = window.matchMedia("(min-width: 681px)").matches

@@ -7,6 +7,7 @@ const ORANGE = 0xef7518;
 const BLACK = 0x1c1c1f;
 const SILVER = 0xc3c8cf;
 const GHOST = 0x8fd3ff;
+const PICK_RADIUS = 70;
 
 const deg = (value) => (value * Math.PI) / 180;
 
@@ -251,7 +252,31 @@ function build(machine, materials, withBase) {
   ring.position.x = shadeDepth / 2 - 10;
   shadeGroup.add(ring);
 
-  return { root, shoulder, elbow, wrist, shadeGroup };
+  let pickProxy = null;
+  let marker = null;
+  if (withBase) {
+    // Invisible pick sphere; getPickSphere() exposes its center/radius.
+    pickProxy = new THREE.Mesh(
+      new THREE.SphereGeometry(PICK_RADIUS, 16, 12),
+      new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        colorWrite: false,
+      })
+    );
+    shadeGroup.add(pickProxy);
+
+    marker = new THREE.Mesh(
+      new THREE.TorusGeometry(18, 2.5, 8, 32),
+      new THREE.MeshBasicMaterial({ color: 0xff4a3d })
+    );
+    marker.visible = false;
+    marker.renderOrder = 3;
+    root.add(marker);
+  }
+
+  return { root, shoulder, elbow, wrist, shadeGroup, pickProxy, marker };
 }
 
 function updateBeam(beam, machine, qModel) {
@@ -305,12 +330,47 @@ export function createRig(machine, options = {}) {
     body.root.add(beam.cone, beam.spot, beam.light, beam.target);
   }
 
+  let pose = machine.joints.map((joint) => joint.model_ref_q);
   const setPose = (qModel) => {
+    pose = [...qModel];
     body.shoulder.rotation.z = deg(qModel[0]);
     body.elbow.rotation.z = deg(qModel[1]);
     body.wrist.rotation.z = deg(qModel[2]);
     if (beam) updateBeam(beam, machine, qModel);
   };
 
-  return { group: body.root, setPose };
+  const getLampWorld = () => {
+    body.root.updateMatrixWorld(true);
+    return body.shadeGroup.getWorldPosition(new THREE.Vector3());
+  };
+
+  return {
+    group: body.root,
+    setPose,
+    getPose: () => [...pose],
+    getLampWorld,
+    getPickSphere: () => {
+      body.root.updateMatrixWorld(true);
+      const center = new THREE.Vector3();
+      body.pickProxy.getWorldPosition(center);
+      return {
+        center: { x: center.x, y: center.y, z: center.z },
+        radius: PICK_RADIUS,
+      };
+    },
+    getLampScreen: (camera, width, height) => {
+      camera.updateMatrixWorld();
+      const point = getLampWorld().project(camera);
+      return {
+        x: (point.x * 0.5 + 0.5) * width,
+        y: (-point.y * 0.5 + 0.5) * height,
+      };
+    },
+    setMarker: (point) => {
+      if (!body.marker) return;
+      body.marker.visible = Boolean(point);
+      if (point) body.marker.position.set(point.x, point.y, 1.5);
+    },
+    isMarkerVisible: () => Boolean(body.marker?.visible),
+  };
 }
