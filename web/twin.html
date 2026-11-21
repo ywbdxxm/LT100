@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LT100 · A1 3D 孪生</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="./twin.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>LT100 · A1 3D 孪生
+      <span class="badge" id="mode-badge">mock</span>
+    </div>
+    <div class="cameras" role="group" aria-label="相机预设">
+      <button type="button" data-view="front">正视</button>
+      <button type="button" data-view="side">侧视</button>
+      <button type="button" data-view="iso" class="on">等距</button>
+    </div>
+  </header>
+
+  <main id="stage-wrap">
+    <canvas id="stage"></canvas>
+
+    <section class="panel hud" id="hud" aria-label="连接状态">
+      <div class="line"><span>连接</span><b id="conn">—</b></div>
+      <div class="line"><span>模式</span><b id="mode">—</b></div>
+      <div class="line"><span>电压</span><b id="volt">—</b></div>
+      <div class="line"><span>年龄</span><b id="age">—</b></div>
+    </section>
+
+    <aside class="panel joints" id="joints" aria-label="关节"></aside>
+
+    <section class="panel readout" id="readout" aria-label="读数">
+      <div class="line"><span>目标灯头</span><b id="target-xy">—</b></div>
+      <div class="line"><span>目标 vs 实际</span><b id="error-mm">—</b></div>
+      <div class="line"><span>光束方向</span><b id="psi">—</b></div>
+    </section>
+
+    <div class="hint" id="hint">
+      实体 = 目标 q · 冷色线框 = 实际（来自 STATE）· 光锥/光斑为模拟 · 拖动空白处环绕 · 滚轮缩放
+    </div>
+    <button type="button" class="stop" id="stop">STOP</button>
+
+    <div class="fatal" id="fatal" hidden></div>
+  </main>
+
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.js" } }
+  </script>
+  <script type="module" src="./twin.js"></script>
+</body>
+</html>
