@@ -50,6 +50,26 @@ class ScsServoBus : public lt100::ServoBus {
     return true;
   }
 
+  bool writePos(uint8_t id, int16_t pos, uint16_t speed, uint8_t acc) override {
+    return validId(id) && bus_.WritePosEx(id, pos, speed, acc) != 0;
+  }
+
+  bool readId(uint8_t id, uint8_t& out) override {
+    if (!validId(id)) return false;
+    const int value = bus_.readByte(id, SMS_STS_ID);
+    if (value < 1 || value > 253) return false;
+    out = static_cast<uint8_t>(value);
+    return true;
+  }
+
+  bool writeId(uint8_t oldId, uint8_t newId) override {
+    if (!validId(oldId) || newId < 1 || newId > lt100::kJointCount) return false;
+    if (bus_.unLockEprom(oldId) != 1) return false;
+    const int written = bus_.writeByte(oldId, SMS_STS_ID, newId);
+    bus_.LockEprom(newId);
+    return written == 1;
+  }
+
   bool torque(uint8_t id, bool on) override {
     return validId(id) && bus_.EnableTorque(id, on ? 1 : 0) != 0;
   }

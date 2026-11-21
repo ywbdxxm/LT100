@@ -34,8 +34,9 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 自动下载对照实验（**内部排查记录**，学生不用看）：[docs/teach/flashing-crosscheck.md](docs/teach/flashing-crosscheck.md)，脚本 [tools/flash-probe.ps1](tools/flash-probe.ps1)
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
 - 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
-- 网页串口控制台（本机桥优先，Web Serial 回退）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
-- 网页标定与检测台（零点/方向/raw 端点、状态检测、低速端点测试）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
+- 网页应用门户（按固件选入口）：[web/index.html](web/index.html)，双击 [start-lt100.bat](start-lt100.bat) 启动
+- 08 网页串口控制台（灯/OLED/状态，需 08 固件）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
+- 09 网页标定与检测台（零点/方向/raw 端点、状态检测、低速端点测试，需 09 固件）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
 - 采购台账（30 套实付，¥4342.94）：[docs/build/purchase-list.md](docs/build/purchase-list.md)
 - 官方参考资料（手册/原理图/数据手册/例程）：[docs/reference/README.md](docs/reference/README.md)
 - 课程例程（按课次编号）：[examples/](examples/)

@@ -6,7 +6,7 @@
 [CmdletBinding()]
 param(
     [int]$Port = 8773,
-    [string]$Page = 'serial.html',
+    [string]$Page = 'index.html',
     [switch]$NoBrowser,
     [switch]$Bridge,
     [string]$ComPort

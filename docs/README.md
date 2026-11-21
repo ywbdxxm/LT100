@@ -47,6 +47,7 @@ docs/
 
 - 结论写进 design / build / teach，不写进 `reference/`
 - `reference/` 里的文件保持原样，不改名、不编辑
-- 页面版在 [`../web/`](../web/)：[`index.html`](../web/index.html) 主控板、
-  [`serial.html`](../web/serial.html) 08 串口控制台、
-  [`servo.html`](../web/servo.html) 09 公版标定与检测台
+- 页面版在 [`../web/`](../web/)：[`index.html`](../web/index.html) 主控板 + 应用门户；
+  [`serial.html`](../web/serial.html) 08 串口控制台（需 08 固件）；
+  [`servo.html`](../web/servo.html) 09 公版标定与检测台（需 09 固件）。
+  每套固件对应一个独立应用页，门户只做聚合与跳转。

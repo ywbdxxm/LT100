@@ -123,6 +123,7 @@ export function parseCalLine(line) {
     maxRaw: toNumber(p.fields.max, 0),
     margin: toNumber(p.fields.margin, 0),
     valid: toNumber(p.fields.valid, 0) === 1,
+    wrap: toNumber(p.fields.wrap, 0) === 1,
   };
 }
 
@@ -136,23 +137,75 @@ export function parseLimitsLine(line) {
     maxRaw: toNumber(p.fields.max, 0),
     safeMin: toNumber(safe[0], 0),
     safeMax: toNumber(safe[1], 0),
+    wrap: toNumber(p.fields.wrap, 0) === 1,
     valid: toNumber(p.fields.valid, 0) === 1,
   };
 }
 
+// Map along the calibrated arc (minRaw -> maxRaw), not the shortest arc, so
+// travels beyond 180 degrees stay unambiguous.
 export function rawToQ(cal, raw) {
   if (!cal || !cal.valid || !Number.isFinite(raw)) return null;
-  return cal.zeroQ + cal.sign * (raw - cal.zeroRaw) / TICKS_PER_DEGREE;
+  const span = rawSpan(cal);
+  if (span <= 0) {
+    return cal.zeroQ + (cal.sign * (raw - cal.zeroRaw)) / TICKS_PER_DEGREE;
+  }
+  const zeroOnArc = ((cal.zeroRaw - cal.minRaw) % 4096 + 4096) % 4096;
+  const rawOnArc = ((raw - cal.minRaw) % 4096 + 4096) % 4096;
+  return cal.zeroQ + (cal.sign * (rawOnArc - zeroOnArc)) / TICKS_PER_DEGREE;
 }
 
 export function qToRaw(cal, q) {
   if (!cal || !cal.valid || !Number.isFinite(q)) return null;
-  return Math.round(cal.zeroRaw + cal.sign * (q - cal.zeroQ) * TICKS_PER_DEGREE);
+  const span = rawSpan(cal);
+  if (span <= 0) return null;
+  const zeroOnArc = ((cal.zeroRaw - cal.minRaw) % 4096 + 4096) % 4096;
+  const onArc = zeroOnArc + cal.sign * (q - cal.zeroQ) * TICKS_PER_DEGREE;
+  return ((cal.minRaw + Math.round(onArc)) % 4096 + 4096) % 4096;
+}
+
+export function safeQRange(cal) {
+  const range = safeRange(cal);
+  if (!range) return null;
+  const a = rawToQ(cal, range.min);
+  const b = rawToQ(cal, range.max);
+  return { min: Math.min(a, b), max: Math.max(a, b) };
+}
+
+export function rawSpan(cal) {
+  if (!cal || !cal.valid) return 0;
+  return cal.minRaw <= cal.maxRaw
+    ? cal.maxRaw - cal.minRaw
+    : 4096 - cal.minRaw + cal.maxRaw;
 }
 
 export function safeRange(cal) {
   if (!cal || !cal.valid) return null;
-  return { min: cal.minRaw + cal.margin, max: cal.maxRaw - cal.margin };
+  const span = rawSpan(cal);
+  const safeSpan = span - 2 * cal.margin;
+  if (safeSpan <= 0) return null;
+  const min = (cal.minRaw + cal.margin) % 4096;
+  return {
+    min,
+    max: (min + safeSpan) % 4096,
+    wrap: min + safeSpan >= 4096,
+  };
+}
+
+export function rawInSafe(range, raw) {
+  if (!range || !Number.isFinite(raw)) return false;
+  return range.wrap
+    ? raw >= range.min || raw <= range.max
+    : raw >= range.min && raw <= range.max;
+}
+
+// Whether a raw value lies on the calibrated travel arc (endpoints included).
+export function rawInJoint(cal, raw) {
+  if (!cal || !cal.valid || !Number.isFinite(raw)) return false;
+  const span = rawSpan(cal);
+  if (span <= 0) return false;
+  const distance = ((raw - cal.minRaw) % 4096 + 4096) % 4096;
+  return distance <= span;
 }
 
 export function calComplete(cals) {
@@ -187,6 +240,28 @@ export function formatQ(q) {
   if (!Number.isFinite(q)) return "—";
   const value = Math.abs(q) < 0.05 ? 0 : Math.round(q * 10) / 10;
   return value.toFixed(1);
+}
+
+export function parseIdLine(line) {
+  const p = parseLine(line);
+  if (!p || p.verb !== "ID") return null;
+  return { value: toNumber(p.fields.value) };
+}
+
+export const idGetCommand = "ID GET";
+
+export function idSetCommand(id) {
+  if (![1, 2, 3].includes(Number(id))) {
+    throw new Error("ID must be 1, 2 or 3");
+  }
+  return `ID SET ${id}`;
+}
+
+export function jogCommand(seq, id, q, speed = 10, acc = 20) {
+  if (!Number.isFinite(q) || id < 1 || id > 3) {
+    throw new Error("JOG requires id 1..3 and a finite q");
+  }
+  return `JOG seq=${seq} id=${id} q=${formatQ(q)} speed=${speed} acc=${acc}`;
 }
 
 export function poseCommand(seq, q, speed = 10, acc = 20) {
@@ -225,6 +300,18 @@ export function calDirCommand(id, sign) {
 
 export function calMarkCommand(id, which) {
   return `CAL MARK ${id} ${which === "MIN" ? "MIN" : "MAX"}`;
+}
+
+export function calSplitCommand(id, side) {
+  return `CAL SPLIT ${id} ${side === "LOW" ? "LOW" : "HIGH"}`;
+}
+
+export function rawMoveCommand(id, raw, speed = 10, acc = 20) {
+  const value = Math.round(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 4095) {
+    throw new Error("RAW target must be 0..4095");
+  }
+  return `RAW id=${id} raw=${value} speed=${speed} acc=${acc}`;
 }
 
 export function calClearCommand(id) {

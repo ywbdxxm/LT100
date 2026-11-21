@@ -142,7 +142,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
   → 本机桥自动打开 CP210x；桥不可用时才弹出 Web Serial 端口选择
 ```
 
-页面提供：串口日志、命令输入、灯环模式、颜色、亮度、OLED 文字、`PING`/`INFO`/`STAT`/`STREAM` 快捷按钮，以及运行时间、空闲内存、收发计数等状态卡。
+页面按任务分三块：灯环（模式/颜色/亮度 + 24 颗预览）、OLED 文字（128×32 预览）、板子状态（运行/内存/收发/模式）；串口日志和原始命令收在底部「展开」抽屉里，平时不占屏幕。
 
 - **08 只做灯、OLED 和板子状态，不接舵机**；舵机标定/检测走 09 + [公版标定台](../../web/servo.html)。
 - 本机桥由 `start-web-console.bat` 的 `-Bridge` 启动，用 .NET `SerialPort`，不会遇到 Web Serial 的 `BufferOverrunError`；运行时会占用 COM 口。

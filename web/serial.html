@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LT100 · 网页串口控制台</title>
+<title>LT100 · 08 串口控制台</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="serial.css">
 </head>
-<body class="serial-page">
+<body class="serial-page app-page app-serial">
 <header class="serial-top">
   <div class="wrap serial-top-inner">
-    <a class="back" href="index.html#serial">← 返回 LT100</a>
-    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">网页串口控制台</span></div>
+    <a class="back" href="index.html#apps">← 返回应用</a>
+    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">08 串口控制台</span></div>
+    <span class="fw-badge b08">08 固件</span>
     <div class="conn-state" id="connState" role="status" aria-live="polite"><span class="dot"></span><span id="connText">未连接</span></div>
   </div>
 </header>
@@ -19,8 +20,8 @@
 <main class="wrap serial-main">
   <section class="serial-intro">
     <div>
-      <h1>网页直接连板子</h1>
-      <p class="lead">不用 Arduino IDE，不用串口助手。双击 <code>start-web-console.bat</code> 启动本机桥，点「连接串口」就能发命令、调灯、看状态；桥不可用时才回退 Web Serial。</p>
+      <h1>先让灯亮起来</h1>
+      <p class="lead">这块页面只服务 08 固件：灯环、OLED 文字和板子状态。连接后点一下模式，灯就变；不用记命令。串口日志收在页面底部，调试时再展开。</p>
     </div>
     <div class="serial-actions">
       <button id="connectBtn" class="btn primary" type="button">连接串口</button>
@@ -32,16 +33,107 @@
   <div id="support" class="notice warn" hidden></div>
   <div id="hint" class="notice info" hidden></div>
 
-  <div class="serial-grid">
-    <section class="card terminal-card" aria-label="串口日志">
+  <section class="device-strip" aria-label="板子状态">
+    <div class="stat"><span>运行</span><b id="statUp">—</b></div>
+    <div class="stat"><span>空闲内存</span><b id="statHeap">—</b></div>
+    <div class="stat"><span>RX / TX</span><b id="statRxTx">—</b></div>
+    <div class="stat"><span>命令数</span><b id="statCmds">—</b></div>
+    <div class="stat"><span>灯模式</span><b id="statMode">—</b></div>
+    <div class="stat"><span>亮度</span><b id="statBright">—</b></div>
+  </section>
+  <p class="fine board-info" id="infoLine">连接后显示芯片信息；当前 OLED 文字：<span id="statText">—</span></p>
+
+  <div class="serial-workspace">
+    <div class="serial-main-col">
+      <section class="card light-card">
+        <div class="card-head">
+          <h2>灯环</h2>
+          <span class="chip">亮度上限 40%</span>
+        </div>
+        <div class="light-stage">
+          <div class="light-ring" id="lightRing" aria-hidden="true"></div>
+          <p class="light-readout"><span class="swatch" id="swatch"></span><b id="lightSummary">单色 · 20%</b><small>24 颗灯环；板载 2 颗状态灯不在预览里。</small></p>
+        </div>
+
+        <div class="seg" id="modeSeg" role="group" aria-label="灯环模式">
+          <button type="button" data-mode="SOLID">单色</button>
+          <button type="button" data-mode="RAINBOW">彩虹</button>
+          <button type="button" data-mode="BREATHE">呼吸</button>
+          <button type="button" data-mode="OFF">关灯</button>
+        </div>
+
+        <div class="control-grid">
+          <label class="control-item">颜色
+            <span class="control-line">
+              <input type="color" id="color" value="#ff6600" disabled aria-label="灯环颜色">
+              <output id="colorHex">#FF6600</output>
+            </span>
+          </label>
+          <label class="control-item">亮度
+            <span class="control-line">
+              <input type="range" id="bright" min="0" max="40" value="20" disabled aria-label="灯环亮度">
+              <output id="brightOut">20%</output>
+            </span>
+          </label>
+        </div>
+        <button id="colorApply" class="btn wide" type="button" disabled>把颜色发到灯环</button>
+        <p class="fine">亮度是为了保护板载 5V：50 颗全白会超过约 1A 的余量。</p>
+      </section>
+
+      <section class="card screen-card">
+        <div class="card-head">
+          <h2>OLED 文字</h2>
+          <span class="chip">128×32 · 0x3C</span>
+        </div>
+        <div class="oled-preview" aria-hidden="true">
+          <span id="oledText">LT100</span>
+        </div>
+        <div class="text-row">
+          <input id="text" type="text" maxlength="20" placeholder="最多 20 个 ASCII 字符" disabled aria-label="OLED 文字">
+          <button id="textBtn" class="btn" type="button" disabled>显示</button>
+          <button id="clearText" class="btn" type="button" disabled>清除</button>
+        </div>
+        <p class="fine">只支持 ASCII；固件显示 5 秒，<code>CLEAR</code> 可提前清除。</p>
+        <p id="textError" class="fine err-text" role="alert" hidden></p>
+      </section>
+    </div>
+
+    <aside class="side">
+      <section class="card" aria-label="快捷命令">
+        <h2>快捷</h2>
+        <div class="quick-row">
+          <button class="chip" type="button" data-cmd="MODE RAINBOW">彩虹</button>
+          <button class="chip" type="button" data-cmd="COLOR FF6600">暖橙</button>
+          <button class="chip" type="button" data-cmd="BRIGHT 20">亮度 20%</button>
+          <button class="chip" type="button" id="streamBtn">STREAM 1</button>
+        </div>
+        <p class="fine">STREAM 打开后每秒回一条 <code>STAT</code>，上面的状态会自己更新。</p>
+      </section>
+
+      <section class="card">
+        <h2>第一次用</h2>
+        <ol class="plain">
+          <li>板上烧录 <code>08_serial_console</code>。</li>
+          <li>双击 <code>start-lt100.bat</code> 打开应用门户，点「串口控制台」；也可以直接双击 <code>start-web-console.bat</code>。</li>
+          <li>点「连接串口」；桥会自动打开 CP210x。</li>
+          <li>先点「彩虹」或输入文字。没有反应就展开底部日志，发 <code>PING</code>。</li>
+        </ol>
+        <p class="fine">运行时会占用串口：Arduino 串口监视器要先关掉，烧录前也要先关本页。桥不可用时才回退 Web Serial。</p>
+      </section>
+    </aside>
+  </div>
+
+  <details class="terminal-card terminal-drawer" id="terminalDrawer">
+    <summary><span>串口日志</span><span class="drawer-hint">命令与回复 · 高级调试</span></summary>
+    <div class="terminal-body">
       <div class="card-head">
-        <h2>串口日志</h2>
+        <h2>08 串口</h2>
         <button id="clearLog" class="btn tiny dark" type="button">清空</button>
       </div>
       <div id="log" class="terminal" role="log" aria-live="polite"></div>
       <form id="sendForm" class="send-row">
         <span class="prompt" aria-hidden="true">&gt;</span>
-        <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="输入命令，例如 PING / MODE RAINBOW / COLOR FF6600" disabled aria-label="串口命令">
+        <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="直接发命令，例如 PING / MODE RAINBOW / COLOR FF6600" disabled aria-label="串口命令">
         <button class="btn primary" type="submit" id="sendBtn" disabled>发送</button>
       </form>
       <div class="quick-row">
@@ -50,82 +142,12 @@
         <button class="chip" type="button" data-cmd="INFO">INFO</button>
         <button class="chip" type="button" data-cmd="STAT">STAT</button>
       </div>
-    </section>
-
-    <aside class="side">
-      <section class="card" aria-label="灯环控制">
-        <h2>灯环</h2>
-        <div class="seg" id="modeSeg" role="group" aria-label="灯环模式">
-          <button type="button" data-mode="SOLID">单色</button>
-          <button type="button" data-mode="RAINBOW">彩虹</button>
-          <button type="button" data-mode="BREATHE">呼吸</button>
-          <button type="button" data-mode="OFF">关灯</button>
-        </div>
-        <label class="field">颜色
-          <input type="color" id="color" value="#ff6600" disabled aria-label="灯环颜色">
-          <output id="colorHex">#FF6600</output>
-        </label>
-        <label class="field">亮度
-          <input type="range" id="bright" min="0" max="40" value="20" disabled aria-label="灯环亮度">
-          <output id="brightOut">20%</output>
-        </label>
-        <button id="colorApply" class="btn wide" type="button" disabled>应用颜色</button>
-        <p class="fine">亮度上限 40%，保护板载 5V。</p>
-      </section>
-
-      <section class="card" aria-label="OLED 文字">
-        <h2>OLED 文字</h2>
-        <div class="text-row">
-          <input id="text" type="text" maxlength="20" placeholder="最多 20 个 ASCII 字符" disabled aria-label="OLED 文字">
-          <button id="textBtn" class="btn" type="button" disabled>显示</button>
-          <button id="clearText" class="btn" type="button" disabled>清除</button>
-        </div>
-        <p class="fine">只支持 ASCII；显示 5 秒，<code>CLEAR</code> 可提前清除。</p>
-      </section>
-
-      <section class="card" aria-label="板子状态">
-        <h2>板子状态</h2>
-        <div class="stats">
-          <div><span>运行</span><b id="statUp">—</b></div>
-          <div><span>空闲内存</span><b id="statHeap">—</b></div>
-          <div><span>RX / TX</span><b id="statRxTx">—</b></div>
-          <div><span>命令数</span><b id="statCmds">—</b></div>
-        </div>
-        <div class="statusline">
-          <span class="swatch" id="swatch"></span>
-          <span id="statMode">—</span>
-          <span id="statBright">—</span>
-          <span id="statText" class="stat-text">—</span>
-        </div>
-        <p class="fine" id="infoLine">连接后显示芯片信息。</p>
-      </section>
-
-      <section class="card" aria-label="快捷命令">
-        <h2>快捷</h2>
-        <div class="quick-row">
-          <button class="chip" type="button" data-cmd="MODE RAINBOW">MODE RAINBOW</button>
-          <button class="chip" type="button" data-cmd="COLOR FF6600">COLOR FF6600</button>
-          <button class="chip" type="button" data-cmd="BRIGHT 20">BRIGHT 20</button>
-          <button class="chip" type="button" id="streamBtn">STREAM 1</button>
-        </div>
-      </section>
-    </aside>
-  </div>
-
-  <section class="card help-card">
-    <h2>第一次用</h2>
-    <ol class="plain">
-      <li>板上已经烧录 <code>08_serial_console</code>；如果还是别的例程，先上传 08。</li>
-      <li>双击 <code>start-web-console.bat</code>，它会启动本机串口桥并打开页面。</li>
-      <li>点「连接串口」；本机桥会自动打开 CP210x，不用手选 COM。桥不可用时才弹出 Web Serial 端口选择。</li>
-      <li>看到 <code>PONG</code> 就可以玩：改灯、发文字、看 <code>STAT</code>。没有回复时，先发 <code>PING</code>，或按一下板子的 EN。</li>
-    </ol>
-    <p class="fine">运行控制台时串口被本机桥占用；Arduino IDE 的串口监视器要先关掉，烧录前也要先关控制台。页面必须从 <code>localhost</code> 或 HTTPS 打开，不能直接双击 HTML。桥优先，Web Serial 回退需要 Chrome / Edge 89+ 或 Firefox 151+；Safari 只能用桥。</p>
-  </section>
+    </div>
+  </details>
 </main>
 
 <footer class="wrap serial-footer">
-  LT100 · 网页串口控制台 · <a href="index.html#serial">串口原理</a> · <a href="servo.html">标定/检测台</a> · <a href="../docs/teach/serial-console.md">命令文档</a>
+  LT100 · 08 串口控制台 · <a href="index.html#apps">所有应用</a> · <a href="index.html#serial">串口原理</a> · <a href="servo.html">09 标定台</a> · <a href="../docs/teach/serial-console.md">命令文档</a>
 </footer>
 
 <script src="serial.js"></script>

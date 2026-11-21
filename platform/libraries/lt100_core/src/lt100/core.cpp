@@ -15,6 +15,12 @@ bool isJoint(uint8_t joint) {
   return joint >= 1 && joint <= kJointCount;
 }
 
+// Target-equals-present-pose move: used to hold a joint still without torque
+// off (dropping the arm).
+constexpr uint16_t kHoldSpeedTicks =
+    static_cast<uint16_t>(20.0f * kTicksPerDegree + 0.5f);
+constexpr uint8_t kHoldAcc = 20;
+
 }  // namespace
 
 Core::Core(ServoBus& bus, Clock& clock, Storage& storage, Output& output)
@@ -71,7 +77,10 @@ void Core::tick() {
   }
   if (mode_ == Mode::Motion && now_ - lastPoseMs_ > kLinkTimeoutMs) {
     mode_ = Mode::Ready;
-    if (!linkLost_) {
+    if (jogMotion_) {
+      // JOG is a one-shot target; the servo keeps moving to it on its own.
+      jogMotion_ = false;
+    } else if (!linkLost_) {
       linkLost_ = true;
       outputError(Error::LinkLost);
     }
@@ -98,17 +107,43 @@ void Core::dispatch(const Command& cmd) {
     case Verb::Pose:
       handlePose(cmd);
       break;
+    case Verb::Jog:
+      handleJog(cmd);
+      break;
+    case Verb::Raw:
+      handleRawMove(cmd);
+      break;
     case Verb::Stop:
       if (mode_ == Mode::Fault || mode_ == Mode::Estop) {
         outputError(Error::BadMode);
         break;
       }
-      if (mode_ == Mode::Motion) mode_ = Mode::Ready;
+      if (mode_ == Mode::Motion) {
+        mode_ = Mode::Ready;
+        // Halt here: position mode has no stop instruction, so write the
+        // present pose back as the target and let the servo decelerate.
+        readAll();
+        for (uint8_t id = 1; id <= kJointCount; id++) {
+          if ((onlineMask_ & bitFor(id)) == 0) continue;
+          bus_.writePos(id, feedback_[id - 1].raw, kHoldSpeedTicks, kHoldAcc);
+        }
+      }
+      jogMotion_ = false;
       linkLost_ = false;
       outputOk("stop");
       break;
     case Verb::Estop:
       mode_ = Mode::Estop;
+      jogMotion_ = false;
+      linkLost_ = false;
+      // Latch the emergency stop and halt in-flight motion here and now: an
+      // ST3215 in position mode has no stop instruction, so writing the
+      // present pose as the target makes it decelerate and hold.
+      readAll();
+      for (uint8_t id = 1; id <= kJointCount; id++) {
+        if ((onlineMask_ & bitFor(id)) == 0) continue;
+        bus_.writePos(id, feedback_[id - 1].raw, kHoldSpeedTicks, kHoldAcc);
+      }
       outputOk("estop");
       break;
     case Verb::Torque:
@@ -120,12 +155,17 @@ void Core::dispatch(const Command& cmd) {
     case Verb::CalRef:
     case Verb::CalDir:
     case Verb::CalMark:
+    case Verb::CalSplit:
     case Verb::CalSave:
     case Verb::CalClear:
       handleCal(cmd);
       break;
     case Verb::Limits:
       outputLimits();
+      break;
+    case Verb::IdGet:
+    case Verb::IdSet:
+      handleId(cmd);
       break;
     case Verb::Clear:
       handleClear();
@@ -175,10 +215,144 @@ void Core::handlePose(const Command& cmd) {
   }
 
   mode_ = Mode::Motion;
+  jogMotion_ = false;
   lastPoseMs_ = now_;
   lastSeq_ = cmd.hasSeq ? cmd.seq : ++seqFallback_;
   linkLost_ = false;
   lastError_ = Error::None;
+}
+
+// Single-joint motion: only the commanded joint needs a valid calibration, be
+// online and have torque on. Used by the endpoint test so one servo can be
+// verified before the other joints exist.
+void Core::handleJog(const Command& cmd) {
+  if (mode_ == Mode::Fault || mode_ == Mode::Estop ||
+      mode_ == Mode::Calibrating) {
+    outputError(Error::BadMode, cmd.joint, cmd.seq);
+    return;
+  }
+  if (cmd.joint < 1 || cmd.joint > kJointCount) {
+    outputError(Error::BadArgs, 0, cmd.seq);
+    return;
+  }
+  const uint8_t index = static_cast<uint8_t>(cmd.joint - 1);
+  const JointCalibration& joint = cal_.joint[index];
+  if (!calibrationJointUsable(joint)) {
+    outputError(Error::Uncalibrated, cmd.joint, cmd.seq);
+    return;
+  }
+  const Error params = checkMotionParams(cmd.speed, cmd.acc);
+  if (params != Error::None) {
+    outputError(params, cmd.joint, cmd.seq);
+    return;
+  }
+  // Read only the commanded joint: a single-joint test must not be aborted by
+  // a read hiccup on another servo, and this keeps the bus load low.
+  ServoFeedback feedback;
+  if (!bus_.feedback(cmd.joint, feedback)) {
+    online_[index] = false;
+    feedback_[index] = ServoFeedback();
+    onlineMask_ &= static_cast<uint8_t>(~bitFor(cmd.joint));
+    setFault(Error::ServoOffline, cmd.joint);
+    return;
+  }
+  online_[index] = true;
+  feedback_[index] = feedback;
+  onlineMask_ |= bitFor(cmd.joint);
+  if (!torqueKnown_ || (torqueMask_ & bitFor(cmd.joint)) == 0) {
+    outputError(Error::BadMode, cmd.joint, cmd.seq);
+    return;
+  }
+  // Never start a move from outside the calibrated travel: the target may be
+  // legal while the present pose is not, and the servo would cross a stop.
+  if (!rawInJointRange(joint, feedback.raw)) {
+    outputError(Error::OutsideSafe, cmd.joint, cmd.seq);
+    return;
+  }
+  const float qA = rawToQ(joint, safeStartRaw(joint));
+  const float qB = rawToQ(joint, safeEndRaw(joint));
+  const float qLo = qA < qB ? qA : qB;
+  const float qHi = qA < qB ? qB : qA;
+  if (cmd.q < qLo - 1e-3f || cmd.q > qHi + 1e-3f) {
+    outputError(Error::OutsideSafe, cmd.joint, cmd.seq);
+    return;
+  }
+  int16_t raw = 0;
+  if (!qToRaw(joint, cmd.q, raw)) {
+    outputError(Error::Range, cmd.joint, cmd.seq);
+    return;
+  }
+  if (!rawInSafeRange(joint, raw)) {
+    outputError(Error::OutsideSafe, cmd.joint, cmd.seq);
+    return;
+  }
+  const uint16_t tickSpeed =
+      static_cast<uint16_t>(static_cast<float>(cmd.speed) * kTicksPerDegree + 0.5f);
+  if (!bus_.writePos(cmd.joint, raw, tickSpeed, cmd.acc)) {
+    setFault(Error::NoAck, cmd.joint);
+    return;
+  }
+  lastSeq_ = cmd.seq;
+  lastPoseMs_ = now_;
+  jogMotion_ = true;
+  linkLost_ = false;
+  lastError_ = Error::None;
+  mode_ = Mode::Motion;
+  outputOk("jog");
+}
+
+void Core::handleRawMove(const Command& cmd) {
+  // Installation-only raw move: exactly one uncalibrated servo on the bus.
+  // This bypasses the calibrated safe range by design, so every other guard is
+  // kept strict (single servo, torque already on, no calibration record).
+  if (mode_ == Mode::Fault || mode_ == Mode::Estop ||
+      mode_ == Mode::Calibrating) {
+    outputError(Error::BadMode, cmd.joint, cmd.seq);
+    return;
+  }
+  if (!isJoint(cmd.joint)) {
+    outputError(Error::BadArgs, cmd.joint, cmd.seq);
+    return;
+  }
+  readAll();
+  if (mode_ == Mode::Fault) return;
+  const uint8_t bit = bitFor(cmd.joint);
+  if (onlineMask_ == 0) {
+    outputError(Error::ServoOffline, cmd.joint, cmd.seq);
+    return;
+  }
+  if (onlineMask_ != bit) {
+    outputError(Error::Busy, cmd.joint, cmd.seq);
+    return;
+  }
+  if (calibrationJointValid(cal_.joint[cmd.joint - 1])) {
+    outputError(Error::BadMode, cmd.joint, cmd.seq);
+    return;
+  }
+  if (!torqueKnown_ || (torqueMask_ & bit) == 0) {
+    outputError(Error::BadMode, cmd.joint, cmd.seq);
+    return;
+  }
+  if (!cmd.hasRaw || cmd.raw < kRawMin || cmd.raw > kRawMax) {
+    outputError(Error::Range, cmd.joint, cmd.seq);
+    return;
+  }
+  const uint16_t speed =
+      cmd.speed == 0 ? kDefaultSpeed
+                     : (cmd.speed > kMaxSpeed ? kMaxSpeed : cmd.speed);
+  const uint16_t tickSpeed =
+      static_cast<uint16_t>(static_cast<float>(speed) * kTicksPerDegree + 0.5f);
+  if (!bus_.writePos(cmd.joint, cmd.raw, tickSpeed, cmd.acc)) {
+    setFault(Error::NoAck, cmd.joint);
+    return;
+  }
+  lastSeq_ = cmd.seq;
+  lastPoseMs_ = now_;
+  jogMotion_ = true;
+  linkLost_ = false;
+  lastError_ = Error::None;
+  mode_ = Mode::Motion;
+  outputOk("raw");
 }
 
 void Core::handleTorque(const Command& cmd) {
@@ -191,10 +365,42 @@ void Core::handleTorque(const Command& cmd) {
     return;
   }
 
-  Error firstError = Error::None;
-  uint8_t firstJoint = 0;
   const uint8_t first = cmd.joint == 0 ? 1 : cmd.joint;
   const uint8_t last = cmd.joint == 0 ? kJointCount : cmd.joint;
+
+  if (cmd.on) {
+    readAll();
+    if (mode_ == Mode::Fault) return;
+    // Torque may only come on inside the calibrated travel: a calibrated joint
+    // found outside it was moved by hand (or the mechanism changed), and
+    // enabling there would drive or hold it against a stop.
+    for (uint8_t id = first; id <= last; id++) {
+      const JointCalibration& joint = cal_.joint[id - 1];
+      if (!calibrationJointValid(joint)) continue;
+      if ((onlineMask_ & bitFor(id)) == 0) {
+        outputError(Error::ServoOffline, id);
+        return;
+      }
+      if (!rawInJointRange(joint, feedback_[id - 1].raw)) {
+        outputError(Error::OutsideSafe, id);
+        return;
+      }
+    }
+    // Set each online joint's target to the present pose before enabling, so a
+    // stale target cannot snap it. This also covers uncalibrated joints used
+    // for installation positioning.
+    for (uint8_t id = first; id <= last; id++) {
+      if (!online_[id - 1]) continue;
+      if (!bus_.writePos(id, feedback_[id - 1].raw, kHoldSpeedTicks,
+                         kHoldAcc)) {
+        outputError(Error::NoAck, id);
+        return;
+      }
+    }
+  }
+
+  Error firstError = Error::None;
+  uint8_t firstJoint = 0;
   for (uint8_t id = first; id <= last; id++) {
     if (!bus_.torque(id, cmd.on)) {
       if (firstError == Error::None) {
@@ -232,6 +438,15 @@ void Core::handleCal(const Command& cmd) {
     if (!calibrationValidate(cal_)) {
       outputError(Error::Endpoints);
       return;
+    }
+    // Default ST3215 angle mode cannot execute a travel that crosses 0; reject
+    // it at save time instead of storing a calibration that cannot move.
+    for (uint8_t i = 0; i < kJointCount; i++) {
+      const JointCalibration& j = cal_.joint[i];
+      if (j.hasRef && j.hasMin && j.hasMax && !calibrationJointUsable(j)) {
+        outputError(Error::Endpoints, static_cast<uint8_t>(i + 1));
+        return;
+      }
     }
     calibrationSetChecksum(cal_);
     if (!storage_.save(cal_)) {
@@ -297,6 +512,35 @@ void Core::handleCal(const Command& cmd) {
     return;
   }
 
+  if (cmd.verb == Verb::CalSplit) {
+    // A marked travel that crosses 0 is split at the seam. The operator picks
+    // the side to keep; the other side becomes unreachable. Only a side that
+    // still contains the reference pose can be saved.
+    if (!joint.hasMin || !joint.hasMax || joint.minRaw <= joint.maxRaw) {
+      outputError(Error::Endpoints, cmd.joint);
+      return;
+    }
+    const int margin = static_cast<int>(joint.margin);
+    int16_t start = joint.minRaw;
+    int16_t end = joint.maxRaw;
+    if (cmd.split < 0) {
+      start = static_cast<int16_t>(kRawMin);
+    } else {
+      end = static_cast<int16_t>(kRawMax);
+    }
+    if (joint.zeroRaw - static_cast<int>(start) < margin ||
+        static_cast<int>(end) - joint.zeroRaw < margin) {
+      outputError(Error::Endpoints, cmd.joint);
+      return;
+    }
+    joint.minRaw = start;
+    joint.maxRaw = end;
+    calibrationSetChecksum(cal_);
+    mode_ = Mode::Calibrating;
+    outputOk("cal_split");
+    return;
+  }
+
   int16_t raw = 0;
   if (!bus_.readRaw(cmd.joint, raw)) {
     outputError(Error::ServoOffline, cmd.joint);
@@ -311,6 +555,7 @@ void Core::handleCal(const Command& cmd) {
     joint.zeroRaw = raw;
     joint.zeroQ = cmd.q;
     joint.hasRef = true;
+    calibrationOrientEndpoints(joint);
     calibrationSetChecksum(cal_);
     mode_ = Mode::Calibrating;
     outputOk("cal_ref");
@@ -326,6 +571,9 @@ void Core::handleCal(const Command& cmd) {
       next.maxRaw = raw;
       next.hasMax = true;
     }
+    calibrationOrientEndpoints(next);
+    // Cross-0 is allowed to be marked so CAL SPLIT can offer a side; CAL SAVE
+    // still refuses it until a side is chosen.
     if (next.hasMin && next.hasMax && !calibrationJointValid(next)) {
       outputError(Error::Endpoints, cmd.joint);
       return;
@@ -338,6 +586,65 @@ void Core::handleCal(const Command& cmd) {
   }
 
   outputError(Error::UnknownCommand, cmd.joint);
+}
+
+// Servo identity: read or change the single connected servo's EEPROM ID.
+// Only valid when exactly one servo answers, so two factory-default ID1
+// servos can never be rewritten together. Allowed in FAULT so a replaced
+// servo can be fixed without a CLEAR deadlock.
+void Core::handleId(const Command& cmd) {
+  if (mode_ == Mode::Motion || mode_ == Mode::Calibrating ||
+      mode_ == Mode::Estop) {
+    outputError(Error::BadMode, 0, cmd.seq);
+    return;
+  }
+  readAll();
+  const uint8_t mask = onlineMask_;
+  if (mask == 0) {
+    outputError(Error::ServoOffline, 0, cmd.seq);
+    return;
+  }
+  if ((mask & static_cast<uint8_t>(mask - 1)) != 0) {
+    outputError(Error::Busy, 0, cmd.seq);  // more than one servo on the bus
+    return;
+  }
+  uint8_t id = 1;
+  while (id <= kJointCount && (mask & bitFor(id)) == 0) id++;
+
+  if (cmd.verb == Verb::IdGet) {
+    uint8_t current = 0;
+    if (!bus_.readId(id, current)) {
+      outputError(Error::NoAck, id, cmd.seq);
+      return;
+    }
+    char line[32];
+    snprintf(line, sizeof(line), "ID value=%u", static_cast<unsigned>(current));
+    output_.line(line);
+    return;
+  }
+
+  const uint8_t next = cmd.newId;
+  if (next < 1 || next > kJointCount) {
+    outputError(Error::Range, id, cmd.seq);
+    return;
+  }
+  if (next != id) {
+    if (!bus_.writeId(id, next)) {
+      outputError(Error::NoAck, id, cmd.seq);
+      return;
+    }
+    uint8_t check = 0;
+    if (!bus_.readId(next, check) || check != next) {
+      outputError(Error::NoAck, next, cmd.seq);
+      return;
+    }
+    // The old address disappearing is expected, not a link loss.
+    previousOnlineMask_ = 0;
+  }
+  readAll();
+  char line[32];
+  snprintf(line, sizeof(line), "OK id_set=%u", static_cast<unsigned>(next));
+  output_.line(line);
 }
 
 void Core::handleClear() {
@@ -446,7 +753,7 @@ void Core::outputHello() {
   char line[160];
   std::snprintf(line, sizeof(line),
                 "HELLO protocol=%u fw=%s cal=%u "
-                "features=state,stream,motion,cal,limits",
+                "features=state,stream,motion,jog,raw,cal,limits,id,split",
                 static_cast<unsigned>(kProtocolVersion), kFirmwareVersion, 1u);
   output_.line(line);
 }
@@ -457,12 +764,13 @@ void Core::outputCalStatus() {
     char line[192];
     std::snprintf(line, sizeof(line),
                   "CAL id=%u ref=%u min_set=%u max_set=%u zero_raw=%d zero_q=%.1f "
-                  "sign=%d min=%d max=%d margin=%u valid=%u",
+                  "sign=%d min=%d max=%d margin=%u valid=%u wrap=%u",
                   static_cast<unsigned>(i + 1), j.hasRef ? 1u : 0u,
                   j.hasMin ? 1u : 0u, j.hasMax ? 1u : 0u, j.zeroRaw,
                   static_cast<double>(j.zeroQ), j.sign, j.minRaw, j.maxRaw,
                   static_cast<unsigned>(j.margin),
-                  calibrationJointValid(j) ? 1u : 0u);
+                  calibrationJointUsable(j) ? 1u : 0u,
+                  j.minRaw > j.maxRaw ? 1u : 0u);
     output_.line(line);
   }
   outputOk("cal");
@@ -471,13 +779,23 @@ void Core::outputCalStatus() {
 void Core::outputLimits() {
   for (uint8_t i = 0; i < kJointCount; i++) {
     const JointCalibration& j = cal_.joint[i];
-    const int safeMin = static_cast<int>(j.minRaw) + static_cast<int>(j.margin);
-    const int safeMax = static_cast<int>(j.maxRaw) - static_cast<int>(j.margin);
+    const int span = calibrationSpanTicks(j);
+    const int margin = static_cast<int>(j.margin);
+    int safeStart = 0;
+    int safeEnd = 0;
+    int wrap = 0;
+    if (span > 2 * margin) {
+      safeStart = (static_cast<int>(j.minRaw) + margin) % 4096;
+      const int safeSpan = span - 2 * margin;
+      safeEnd = (safeStart + safeSpan) % 4096;
+      wrap = (safeStart + safeSpan) >= 4096 ? 1 : 0;
+    }
     char line[160];
     std::snprintf(line, sizeof(line),
-                  "LIMITS id=%u min=%d max=%d safe=%d..%d valid=%u",
-                  static_cast<unsigned>(i + 1), j.minRaw, j.maxRaw, safeMin,
-                  safeMax, calibrationJointValid(j) ? 1u : 0u);
+                  "LIMITS id=%u min=%d max=%d safe=%d..%d wrap=%u valid=%u",
+                  static_cast<unsigned>(i + 1), j.minRaw, j.maxRaw, safeStart,
+                  safeEnd, static_cast<unsigned>(wrap),
+                  calibrationJointUsable(j) ? 1u : 0u);
     output_.line(line);
   }
   outputOk("limits");

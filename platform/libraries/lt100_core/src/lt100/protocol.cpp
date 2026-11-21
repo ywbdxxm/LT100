@@ -179,6 +179,65 @@ ParseResult parseLine(const char* line, size_t len) {
       }
     }
     if (!hasQ) return fail(Error::BadArgs);
+  } else if (ieq(tokens[0], "JOG")) {
+    cmd.verb = Verb::Jog;
+    bool hasId = false;
+    bool hasQ = false;
+    for (uint8_t i = 1; i < count; i++) {
+      const char* value = nullptr;
+      if (keyValue(tokens[i], "id", value)) {
+        if (!parseJoint(value, cmd.joint, false)) return fail(Error::BadArgs);
+        hasId = true;
+      } else if (keyValue(tokens[i], "q", value)) {
+        if (!parseFloat(value, cmd.q)) return fail(Error::BadArgs);
+        hasQ = true;
+      } else if (keyValue(tokens[i], "speed", value)) {
+        uint32_t v = 0;
+        if (!parseU32(value, v) || v > 0xffffu) return fail(Error::BadArgs);
+        cmd.speed = static_cast<uint16_t>(v);
+      } else if (keyValue(tokens[i], "acc", value)) {
+        uint32_t v = 0;
+        if (!parseU32(value, v) || v > 0xffu) return fail(Error::BadArgs);
+        cmd.acc = static_cast<uint8_t>(v);
+      } else if (keyValue(tokens[i], "seq", value)) {
+        if (!parseU32(value, cmd.seq)) return fail(Error::BadArgs);
+        cmd.hasSeq = true;
+      } else {
+        return fail(Error::BadArgs);
+      }
+    }
+    if (!hasId || !hasQ) return fail(Error::BadArgs);
+  } else if (ieq(tokens[0], "RAW")) {
+    cmd.verb = Verb::Raw;
+    bool hasId = false;
+    for (uint8_t i = 1; i < count; i++) {
+      const char* value = nullptr;
+      if (keyValue(tokens[i], "id", value)) {
+        if (!parseJoint(value, cmd.joint, false)) return fail(Error::BadArgs);
+        hasId = true;
+      } else if (keyValue(tokens[i], "raw", value)) {
+        uint32_t v = 0;
+        if (!parseU32(value, v) || v > static_cast<uint32_t>(kRawMax)) {
+          return fail(Error::BadArgs);
+        }
+        cmd.raw = static_cast<int16_t>(v);
+        cmd.hasRaw = true;
+      } else if (keyValue(tokens[i], "speed", value)) {
+        uint32_t v = 0;
+        if (!parseU32(value, v) || v > 0xffffu) return fail(Error::BadArgs);
+        cmd.speed = static_cast<uint16_t>(v);
+      } else if (keyValue(tokens[i], "acc", value)) {
+        uint32_t v = 0;
+        if (!parseU32(value, v) || v > 0xffu) return fail(Error::BadArgs);
+        cmd.acc = static_cast<uint8_t>(v);
+      } else if (keyValue(tokens[i], "seq", value)) {
+        if (!parseU32(value, cmd.seq)) return fail(Error::BadArgs);
+        cmd.hasSeq = true;
+      } else {
+        return fail(Error::BadArgs);
+      }
+    }
+    if (!hasId || !cmd.hasRaw) return fail(Error::BadArgs);
   } else if (ieq(tokens[0], "STOP")) {
     if (count != 1) return fail(Error::BadArgs);
     cmd.verb = Verb::Stop;
@@ -225,6 +284,34 @@ ParseResult parseLine(const char* line, size_t len) {
         return fail(Error::BadArgs);
       }
       cmd.verb = Verb::CalMark;
+    } else if (ieq(tokens[1], "SPLIT")) {
+      if (count != 4 || !parseJoint(tokens[2], cmd.joint, false)) {
+        return fail(Error::BadArgs);
+      }
+      if (ieq(tokens[3], "LOW")) {
+        cmd.split = -1;
+      } else if (ieq(tokens[3], "HIGH")) {
+        cmd.split = 1;
+      } else {
+        return fail(Error::BadArgs);
+      }
+      cmd.verb = Verb::CalSplit;
+    } else {
+      return fail(Error::UnknownCommand);
+    }
+  } else if (ieq(tokens[0], "ID")) {
+    if (count < 2) return fail(Error::BadArgs);
+    if (ieq(tokens[1], "GET")) {
+      if (count != 2) return fail(Error::BadArgs);
+      cmd.verb = Verb::IdGet;
+    } else if (ieq(tokens[1], "SET")) {
+      if (count != 3) return fail(Error::BadArgs);
+      uint32_t v = 0;
+      if (!parseU32(tokens[2], v) || v < 1 || v > kJointCount) {
+        return fail(Error::BadArgs);
+      }
+      cmd.newId = static_cast<uint8_t>(v);
+      cmd.verb = Verb::IdSet;
     } else {
       return fail(Error::UnknownCommand);
     }

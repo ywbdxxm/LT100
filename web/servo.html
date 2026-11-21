@@ -3,16 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LT100 · 公版标定与检测台</title>
+<title>LT100 · 09 标定与检测台</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="serial.css">
 <link rel="stylesheet" href="servo.css">
 </head>
-<body class="serial-page servo-page">
+<body class="serial-page servo-page app-page">
 <header class="serial-top">
   <div class="wrap serial-top-inner">
-    <a class="back" href="index.html#servo">← 返回 LT100</a>
-    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">公版标定与检测台</span></div>
+    <a class="back" href="index.html#apps">← 返回应用</a>
+    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">09 标定与检测台</span></div>
+    <span class="fw-badge">09 固件</span>
     <span id="mockBadge" class="pill warn" hidden>模拟</span>
     <div class="conn-state" id="connState" role="status" aria-live="polite"><span class="dot"></span><span id="connText">未连接</span></div>
   </div>
@@ -22,7 +23,7 @@
   <section class="serial-intro">
     <div>
       <h1>先标定，再检测，最后才动</h1>
-      <p class="lead">基于公版 <code>LT100Core</code> / <code>LT100P/1</code>：看三关节实测状态，完成零点、方向、raw 端点标定，检查在线/标定/扭矩/电压/温度，再用低速端点测试验证安全区。网页不绕过固件限位。</p>
+      <p class="lead">09 固件专用。按向导逐关节标定；某个关节标定有效、上力之后，就能单独做低速端点测试，不用等三颗齐。网页只发 <code>LT100P/1</code> 命令，不绕过固件限位。</p>
     </div>
     <div class="serial-actions">
       <button id="connectBtn" class="btn primary" type="button">连接串口</button>
@@ -35,7 +36,7 @@
   <div id="hint" class="notice info" hidden></div>
 
   <div class="notice warn servo-safety">
-    <b>先扶住手臂。</b>「卸力」只关输出力矩，不会给舵机断电；关节可能掉下来。标定全程 12V 5A 必须打开，USB 只给逻辑。先做腕、再做肘、最后做肩；端点测试会发 <code>POSE</code>，必须三关节在线、标定完整、扭矩已上力，并随时准备 <b>STOP / ESTOP / 断电</b>。
+    <b>先扶住手臂。</b>「卸力」只关输出力矩，不会给舵机断电；关节可能掉下来。标定全程 12V 5A 必须打开，USB 只给逻辑。先做腕、再做肘、最后做肩；端点测试只动当前关节，该关节在线、标定有效、已上力即可，并随时准备 <b>停止 / 急停 / 断电</b>。
   </div>
 
   <section class="status-strip" aria-label="设备状态">
@@ -43,188 +44,329 @@
     <div class="stat"><span>在线</span><b id="stOnline">0/3</b></div>
     <div class="stat"><span>标定</span><b id="stCal">0/3</b></div>
     <div class="stat"><span>扭矩</span><b id="stTorque">0/3</b></div>
-    <div class="stat"><span>错误</span><b id="stErr">—</b></div>
+    <div class="stat"><span>最近错误</span><b id="stErr">—</b></div>
     <div class="stat"><span>反馈年龄</span><b id="stAge">—</b></div>
     <div class="stat"><span>总线电压</span><b id="stVolt">—</b></div>
   </section>
 
   <div id="rangeWarn" class="notice warn" role="status" aria-live="polite" hidden></div>
 
-  <div class="servo-work">
-    <section class="servo-joints" id="joints" aria-label="三个关节状态">
-      <button class="joint-card" type="button" data-id="1" aria-pressed="true">
-        <div class="joint-head"><span class="joint-id">ID1 · 肩</span><span class="pill" id="j1state">离线</span></div>
-        <div class="joint-pos" id="j1raw">----</div>
-        <div class="joint-q" id="j1q">q —</div>
-        <div class="joint-meta four">
-          <span>电压 <b id="j1volt">—</b></span>
-          <span>温度 <b id="j1temp">—</b></span>
-          <span>负载 <b id="j1load">—</b></span>
-          <span>电流 <b id="j1cur">—</b></span>
+  <div class="safety-bar" role="group" aria-label="安全操作">
+    <span id="safetyState" class="safety-state">当前：未连接</span>
+    <button id="stopBtn" class="btn" type="button" disabled>停止<small>STOP</small></button>
+    <button id="estopBtn" class="btn danger" type="button" disabled>急停<small>ESTOP · 锁存</small></button>
+    <button id="clearBtn" class="btn" type="button" disabled>解除急停<small>CLEAR</small></button>
+  </div>
+  <p class="fine safety-legend"><b>停止</b>：结束这次运动，不再发新目标；舵机走完最后一个目标，不锁存。<b>急停</b>：锁住，之后所有运动和标定命令都被拒绝，直到点 <b>解除急停</b>。<b>解除急停</b>：只解锁，不会让关节运动；三颗都标定时还要求三颗在线。</p>
+
+  <div class="cal-workspace">
+    <section class="joint-rail" id="joints" aria-label="三个关节状态">
+      <div class="joint-card" data-id="1">
+        <div class="joint-pick" role="button" tabindex="0" data-id="1" aria-pressed="false">
+          <div class="joint-head"><span class="joint-id">ID1 · 肩</span><span class="pill" id="j1state">离线</span></div>
+          <div class="joint-pos" id="j1raw">----</div>
+          <div class="joint-q" id="j1q">q —</div>
+          <div class="joint-meta four">
+            <span>电压 <b id="j1volt">—</b></span>
+            <span>温度 <b id="j1temp">—</b></span>
+            <span>负载 <b id="j1load">—</b></span>
+            <span>电流 <b id="j1cur">—</b></span>
+          </div>
+          <div class="joint-safe" id="j1safe">未标定</div>
         </div>
-        <div class="joint-safe" id="j1safe">未标定</div>
-      </button>
-      <button class="joint-card" type="button" data-id="2" aria-pressed="false">
-        <div class="joint-head"><span class="joint-id">ID2 · 肘</span><span class="pill" id="j2state">离线</span></div>
-        <div class="joint-pos" id="j2raw">----</div>
-        <div class="joint-q" id="j2q">q —</div>
-        <div class="joint-meta four">
-          <span>电压 <b id="j2volt">—</b></span>
-          <span>温度 <b id="j2temp">—</b></span>
-          <span>负载 <b id="j2load">—</b></span>
-          <span>电流 <b id="j2cur">—</b></span>
+        <div class="joint-torque">
+          <span>扭矩 <b id="j1tq">—</b></span>
+          <button class="btn tiny joint-tq-btn" type="button" data-torque="1" disabled>上力</button>
         </div>
-        <div class="joint-safe" id="j2safe">未标定</div>
-      </button>
-      <button class="joint-card" type="button" data-id="3" aria-pressed="false">
-        <div class="joint-head"><span class="joint-id">ID3 · 腕</span><span class="pill" id="j3state">离线</span></div>
-        <div class="joint-pos" id="j3raw">----</div>
-        <div class="joint-q" id="j3q">q —</div>
-        <div class="joint-meta four">
-          <span>电压 <b id="j3volt">—</b></span>
-          <span>温度 <b id="j3temp">—</b></span>
-          <span>负载 <b id="j3load">—</b></span>
-          <span>电流 <b id="j3cur">—</b></span>
+      </div>
+      <div class="joint-card" data-id="2">
+        <div class="joint-pick" role="button" tabindex="0" data-id="2" aria-pressed="false">
+          <div class="joint-head"><span class="joint-id">ID2 · 肘</span><span class="pill" id="j2state">离线</span></div>
+          <div class="joint-pos" id="j2raw">----</div>
+          <div class="joint-q" id="j2q">q —</div>
+          <div class="joint-meta four">
+            <span>电压 <b id="j2volt">—</b></span>
+            <span>温度 <b id="j2temp">—</b></span>
+            <span>负载 <b id="j2load">—</b></span>
+            <span>电流 <b id="j2cur">—</b></span>
+          </div>
+          <div class="joint-safe" id="j2safe">未标定</div>
         </div>
-        <div class="joint-safe" id="j3safe">未标定</div>
-      </button>
+        <div class="joint-torque">
+          <span>扭矩 <b id="j2tq">—</b></span>
+          <button class="btn tiny joint-tq-btn" type="button" data-torque="2" disabled>上力</button>
+        </div>
+      </div>
+      <div class="joint-card selected" data-id="3">
+        <div class="joint-pick" role="button" tabindex="0" data-id="3" aria-pressed="true">
+          <div class="joint-head"><span class="joint-id">ID3 · 腕</span><span class="pill" id="j3state">离线</span></div>
+          <div class="joint-pos" id="j3raw">----</div>
+          <div class="joint-q" id="j3q">q —</div>
+          <div class="joint-meta four">
+            <span>电压 <b id="j3volt">—</b></span>
+            <span>温度 <b id="j3temp">—</b></span>
+            <span>负载 <b id="j3load">—</b></span>
+            <span>电流 <b id="j3cur">—</b></span>
+          </div>
+          <div class="joint-safe" id="j3safe">未标定</div>
+        </div>
+        <div class="joint-torque">
+          <span>扭矩 <b id="j3tq">—</b></span>
+          <button class="btn tiny joint-tq-btn" type="button" data-torque="3" disabled>上力</button>
+        </div>
+      </div>
+      <p class="fine rail-hint">建议顺序：腕 ID3 → 肘 ID2 → 肩 ID1。点卡片切换当前关节。</p>
+      <p class="fine rail-hint">每张卡片底部可单独上力/卸力；上力前先扶住，卸力会掉臂。</p>
+      <p id="railMsg" class="fine rail-msg" role="status" aria-live="polite"></p>
     </section>
 
-    <aside class="servo-side">
-      <section class="card">
-        <h2>标定向导 · <span id="currentJoint">ID1</span></h2>
-        <p class="fine servo-current">当前选中 <b id="currentJoint2">ID1</b>。建议顺序：腕 ID3 → 肘 ID2 → 肩 ID1。每一步都先确认在线。</p>
-        <div class="step-list">
-          <div class="step-row" data-step="1">
-            <span class="step-num">1</span>
-            <div><b>选关节</b><p>点左侧卡片选 ID；一次只标一个关节。</p></div>
-            <span class="step-state" id="s1state">—</span>
-          </div>
-          <div class="step-row" data-step="2">
-            <span class="step-num">2</span>
-            <div><b>卸力</b><p>手扶住，发 <code>TORQUE &lt;id&gt; OFF</code>；12V 保持打开。</p></div>
-            <button class="btn tiny" id="torqueOffBtn" type="button" disabled>卸力</button>
-          </div>
-          <div class="step-row" data-step="3">
-            <span class="step-num">3</span>
-            <div>
-              <b>参考姿态</b>
-              <p>把关节放在可复现的标记姿态，填该姿态的模型角 q（度），发 <code>CAL REF</code>。</p>
-              <label class="inline-field">q（度）<input id="refQ" type="number" inputmode="decimal" step="0.1" value="0" disabled></label>
-            </div>
-            <button class="btn tiny" id="calRefBtn" type="button" disabled>CAL REF</button>
-          </div>
-          <div class="step-row" data-step="3b">
-            <span class="step-num">4</span>
-            <div>
-              <b>方向</b>
-              <p>raw 增大时 q 增大选 <code>+1</code>，否则 <code>-1</code>；发 <code>CAL DIR</code>。</p>
-              <label class="inline-field">方向<select id="dirSign" disabled>
-                <option value="1">+1 · raw 增大 q 增大</option>
-                <option value="-1">-1 · raw 增大 q 减小</option>
-              </select></label>
-            </div>
-            <button class="btn tiny" id="calDirBtn" type="button" disabled>CAL DIR</button>
-          </div>
-          <div class="step-row" data-step="4">
-            <span class="step-num">5</span>
-            <div><b>raw 较小端点</b><p>手移到刻度较小的一端，点 <code>CAL MARK MIN</code>；不一定是机械下限。</p></div>
-            <button class="btn tiny" id="markMinBtn" type="button" disabled>MARK MIN</button>
-          </div>
-          <div class="step-row" data-step="5">
-            <span class="step-num">6</span>
-            <div><b>raw 较大端点</b><p>手移到刻度较大的一端，点 <code>CAL MARK MAX</code>；MIN 必须小于 MAX。</p></div>
-            <button class="btn tiny" id="markMaxBtn" type="button" disabled>MARK MAX</button>
-          </div>
-          <div class="step-row" data-step="6">
-            <span class="step-num">7</span>
-            <div><b>保存标定</b><p>写 NVS 并退出标定模式；三个关节都有效才进入 READY。</p></div>
-            <button class="btn tiny" id="calSaveBtn" type="button" disabled>CAL SAVE</button>
-          </div>
-          <div class="step-row" data-step="7">
-            <span class="step-num">8</span>
-            <div><b>上力</b><p>确认手臂在安全区，再 <code>TORQUE all ON</code>；之后才允许 POSE。</p></div>
-            <button class="btn tiny" id="torqueOnBtn" type="button" disabled>TORQUE ON</button>
-          </div>
-        </div>
-        <p id="wizMsg" class="fine" role="status" aria-live="polite">连接后先刷新，确认 3/3 在线。</p>
-        <button id="calClearBtn" class="btn danger wide" type="button" disabled>清除全部标定（CAL CLEAR all）</button>
-        <p class="fine">第一次 <code>CAL REF/DIR/MARK</code> 会进入 <b>CAL</b> 模式；CAL 下 <code>POSE</code> 和 <code>TORQUE ON</code> 都会被拒绝，必须保存或清除才能退出。未保存的编辑掉电丢失。</p>
-      </section>
+    <section class="cal-main">
+      <nav class="app-tabs" id="calTabs" role="tablist" aria-label="标定台页面">
+        <button type="button" role="tab" data-panel="calibrate" class="active" aria-selected="true">标定</button>
+        <button type="button" role="tab" data-panel="inspect" aria-selected="false">状态</button>
+        <button type="button" role="tab" data-panel="test" aria-selected="false">测试</button>
+        <button type="button" role="tab" data-panel="assign" aria-selected="false">配 ID</button>
+      </nav>
 
-      <section class="card">
-        <h2>检测与维护</h2>
-        <dl class="detect-list">
-          <div><dt>固件</dt><dd id="fwInfo">—</dd></div>
-          <div><dt>标定有效</dt><dd id="calInfo">—</dd></div>
-          <div><dt>扭矩</dt><dd id="torqueInfo">—</dd></div>
-          <div><dt>最近错误</dt><dd id="errInfo">—</dd></div>
-        </dl>
-        <div class="detect-actions">
-          <button id="refreshBtn" class="btn wide" type="button" disabled>刷新状态 / 标定 / 限位</button>
-          <div class="btn-row">
-            <button id="readCalBtn" class="btn" type="button" disabled>读标定</button>
-            <button id="readLimitsBtn" class="btn" type="button" disabled>读限位</button>
+      <div class="tab-panel" id="panel-calibrate" role="tabpanel">
+        <section class="card wizard-card">
+          <div class="wizard-head">
+            <h2>标定向导 · <span id="currentJoint">ID3</span></h2>
+            <span class="wizard-sub">一次只做一步</span>
           </div>
-          <div class="btn-row">
-            <button id="stopBtn" class="btn" type="button" disabled>STOP</button>
-            <button id="estopBtn" class="btn dark" type="button" disabled>ESTOP</button>
-            <button id="clearBtn" class="btn" type="button" disabled>CLEAR</button>
+          <div class="now-card" aria-live="polite">
+            <span class="now-label">现在做</span>
+            <div>
+              <p id="nowText">连接后，这里会告诉你下一步做什么。</p>
+              <p id="liveReadout" class="live-readout">raw — · q —</p>
+            </div>
           </div>
-        </div>
-        <p class="fine">STOP 保持最后目标；ESTOP 锁存，需 CLEAR；已标定时 CLEAR 还要求三舵机都在线。CLEAR 不会主动让关节运动。</p>
-      </section>
+          <details class="cal-gate">
+            <summary><b>前提</b>：参考姿态 Z 必须在允许行程内；行程最好不跨 0</summary>
+            <p>固件以「包含 Z 的那段弧」为行程，两端谁先标都行。Z 在行程外（收纳位、停靠位、摆错）时，固件会改选补弧——标定仍会保存成功，但可用行程是反的。Z 的位置只能由你保证，固件无法判断。</p>
+            <p><b>行程不能跨 0：</b>ST3215 默认角度模式把目标位置当作 0..4095 的绝对角度，按当前值与目标的差值决定方向，不会按标定弧走。跨 0 的目标会让它朝反方向走长路径，越过端点。装配时先接标定工具，手动扫一遍行程看 raw；跨 0 就换舵盘齿/安装位再装。已经装好的机器标出跨 0 时，向导会让你选保留接缝的哪一段（另一段将不可达）。</p>
+          </details>
+          <div class="step-list">
+            <div class="step-row" data-step="1">
+              <span class="step-num">1</span>
+              <div><b>选要标的关节</b><p>点左边卡片选一个关节；一次只标一个。</p></div>
+              <span class="step-state" id="s1state">—</span>
+            </div>
+            <div class="step-row" data-step="2">
+              <span class="step-num">2</span>
+              <div><b>让它松手</b><p>先用手扶住关节，再点「确认卸力」。这一步会明确告诉固件现在没有力矩；舵机只是不用力，没有断电。</p></div>
+              <button class="btn tiny" id="torqueOffBtn" type="button" disabled>确认卸力</button>
+            </div>
+            <div class="step-row" data-step="3">
+              <span class="step-num">3</span>
+              <div>
+                <b>定零点</b>
+                <p>把关节摆到你要当 0° 的位置，q 填 0，点「记录零点」。以后所有 q 都从这里开始量。</p>
+                <label class="inline-field">q（度）<input id="refQ" type="number" inputmode="decimal" step="0.1" value="0" disabled></label>
+              </div>
+              <button class="btn tiny" id="calRefBtn" type="button" disabled>记录零点</button>
+            </div>
+            <div class="step-row" data-step="3b">
+              <span class="step-num">4</span>
+              <div>
+                <b>定正方向</b>
+                <p>用手慢慢转一点，看屏幕上的 raw 变大还是变小；选一个方向，点「确定方向」。</p>
+                <label class="inline-field">方向<select id="dirSign" disabled>
+                  <option value="1">+1 · raw 变大时 q 变大</option>
+                  <option value="-1">-1 · raw 变大时 q 变小</option>
+                </select></label>
+              </div>
+              <button class="btn tiny" id="calDirBtn" type="button" disabled>确定方向</button>
+            </div>
+            <div class="step-row" data-step="4">
+              <span class="step-num">5</span>
+              <div><b>标记一端</b><p>把关节转到行程的<b>任意一端</b>（别顶死），点「标记一端」。先标哪端都行，另一端再标。<b>行程最好不跨 0</b>：装配时先扫 raw 再定安装；已经跨 0 的机器会在标完后让你选保留哪一段。</p></div>
+              <button class="btn tiny" id="markMinBtn" type="button" disabled>标记一端</button>
+            </div>
+            <div class="step-row" data-step="5">
+              <span class="step-num">6</span>
+              <div><b>标记另一端</b><p>再转到行程的<b>另一端</b>（别顶死），点「标记另一端」。固件取包含参考姿态的那段弧作为行程；如果 Z 在行程外，它会选补弧并保存成功，所以标之前先确认 Z 在你要的行程内。跨 0 的弧会让你在下一步选保留哪一段。</p></div>
+              <button class="btn tiny" id="markMaxBtn" type="button" disabled>标记另一端</button>
+            </div>
+            <div class="step-row" data-step="6">
+              <span class="step-num">7</span>
+              <div><b>保存这个关节</b><p>把上面的零点、方向和两个端点写进板子。按钮在向导底部。</p></div>
+            </div>
+            <div class="step-row" data-step="7">
+              <span class="step-num">8</span>
+              <div><b>上力并测试</b><p>关节在 safe 区间内时，点左侧卡片底部的「上力」；通过后切到「测试」低速试走。</p></div>
+            </div>
+          </div>
+          <div id="splitBox" class="split-box" hidden>
+            <h3>行程跨 0：选保留哪一段</h3>
+            <p>ST3215 默认角度模式不能跨 0。接缝会把行程切成两段，只能保留一侧；<b>接缝端不是机械端点</b>，手臂会在中途停住，另一侧不可达。</p>
+            <label class="split-opt"><input type="radio" name="splitSide" id="splitLow" value="LOW" disabled><span id="splitLowLabel">低段</span></label>
+            <label class="split-opt"><input type="radio" name="splitSide" id="splitHigh" value="HIGH" disabled><span id="splitHighLabel">高段</span></label>
+            <p id="splitHint" class="fine"></p>
+            <button id="splitConfirmBtn" class="btn primary" type="button" disabled>确认保留这段并保存</button>
+          </div>
+          <p id="wizMsg" class="fine wizard-msg" role="status" aria-live="polite">连接后先刷新，确认 3/3 在线。</p>
+          <div class="wizard-foot">
+            <button id="calSaveBtn" class="btn primary" type="button" disabled>CAL SAVE · 保存当前关节</button>
+            <button id="calClearBtn" class="btn danger" type="button" disabled>清除全部标定（CAL CLEAR all）</button>
+          </div>
+          <details class="cal-theory">
+            <summary>标定原理与 CAL 模式</summary>
+            <p><b>raw</b> 是舵机内部刻度，单圈 0–4095，转满一圈回到 0；<b>q</b> 是我们定义的角度。标定 = 记零点 + 定正方向 + 划两个端点；保存后才算数，上力后才能动。协议里把两个端点叫 MIN/MAX，它们只是两个槽位；<b>跨 0 的行程默认模式不能执行</b>——ST3215 不会按环形弧走，会朝反方向长路径运动。标出跨 0 时，用 <code>CAL SPLIT</code> 保留接缝一侧（含 Z 的那段），另一段作废。</p>
+            <p>第一次 <code>CAL REF/DIR/MARK</code> 会进入 <b>CAL</b> 模式；CAL 下 <code>POSE</code> 和 <code>TORQUE ON</code> 都会被拒绝，必须保存或清除才能退出。未保存的编辑掉电丢失。</p>
+          </details>
+        </section>
+      </div>
 
-      <section class="card">
-        <h2>低速端点测试 · <span id="testJoint">ID1</span></h2>
-        <p class="fine">只改当前关节的 q，其余关节保持当前实测角；速度固定 10°/s，20Hz 发 POSE，到位或超时自动 STOP。先扶住，随时按 STOP。</p>
-        <div class="safe-line" id="testSafe">标定/限位未就绪</div>
-        <div class="btn-row">
-          <button id="testMinBtn" class="btn" type="button" disabled>去 safe MIN</button>
-          <button id="testMaxBtn" class="btn" type="button" disabled>去 safe MAX</button>
-          <button id="testStopBtn" class="btn dark" type="button" disabled>停止测试</button>
-        </div>
-        <p id="testMsg" class="fine" role="status" aria-live="polite">标定完整且三舵机在线、扭矩 ON 后才可用。</p>
-      </section>
-    </aside>
+      <div class="tab-panel" id="panel-assign" role="tabpanel" hidden>
+        <section class="card">
+          <h2>配舵机 ID</h2>
+          <p class="fine">一次只接<b>一颗</b>舵机。读出当前 ID，再选目标：<b>肩 ID1</b>（最下面）、<b>肘 ID2</b>（中间）、<b>腕 ID3</b>（最上面）。写完会自动读回验证。两颗同时接会抢答，工具会拒绝写入。</p>
+          <div class="id-live"><b id="idNow">ID —</b><span id="idOnline">在线 0 颗</span></div>
+          <p id="idHint" class="fine id-hint"></p>
+          <div class="btn-row">
+            <button id="idSet1" class="btn" type="button" disabled>设为 ID1 · 肩</button>
+            <button id="idSet2" class="btn" type="button" disabled>设为 ID2 · 肘</button>
+            <button id="idSet3" class="btn" type="button" disabled>设为 ID3 · 腕</button>
+          </div>
+          <div class="btn-row">
+            <button id="idReadBtn" class="btn" type="button" disabled>读取当前 ID</button>
+          </div>
+          <p id="idMsg" class="fine detect-msg" role="status" aria-live="polite">先把舵机单独接在总线上，再点「读取当前 ID」。</p>
+        </section>
+        <section class="card" style="margin-top:12px">
+          <h2>安装定位 · 未标定 raw 移动</h2>
+          <p class="fine">装舵盘/对齿时用：只允许总线上<b>只有一颗</b>舵机，并且该关节<b>还没有标定记录</b>。raw 直接给 0..4095，<b>没有 safe 范围保护</b>；先固定好舵机、手放断电开关旁，速度从 5°/s 起。已有标定的关节请去「测试」页用 JOG。</p>
+          <div class="test-live"><b id="rawNow">raw —</b><span id="rawHint">在线 0 颗</span></div>
+          <div class="test-target">
+            <label class="inline-field">目标 raw<input id="rawTarget" type="number" inputmode="numeric" min="0" max="4095" step="1" value="2048" disabled></label>
+            <label class="inline-field">速度<select id="rawSpeed" disabled>
+              <option value="5" selected>5°/s · 很慢</option>
+              <option value="10">10°/s · 慢</option>
+              <option value="20">20°/s · 中</option>
+            </select></label>
+            <button id="rawGoBtn" class="btn" type="button" disabled>去这个 raw</button>
+          </div>
+          <div class="btn-row">
+            <button id="rawTorqueOn" class="btn tiny" type="button" disabled>上力</button>
+            <button id="rawTorqueOff" class="btn tiny" type="button" disabled>卸力</button>
+            <button id="rawCenterBtn" class="btn tiny" type="button" disabled>去中点 2048</button>
+          </div>
+          <p id="rawMsg" class="fine" role="status" aria-live="polite">只接一颗舵机时可用；上力后舵机会保持当前位置，再走目标。</p>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="panel-inspect" role="tabpanel" hidden>
+        <section class="card">
+          <h2>状态与维护</h2>
+          <p class="fine">这里只读数据，不会让舵机运动；切到这个标签会自动刷新一次。</p>
+          <dl class="detect-list">
+            <div><dt>固件</dt><dd id="fwInfo">—</dd></div>
+            <div><dt>标定有效</dt><dd id="calInfo">—</dd></div>
+            <div><dt>扭矩</dt><dd id="torqueInfo">—</dd></div>
+            <div><dt>最近错误</dt><dd id="errInfo">—</dd></div>
+          </dl>
+          <dl class="detect-list" id="jointDetail"></dl>
+          <p id="detectMsg" class="fine detect-msg" role="status" aria-live="polite">切到这里会自动刷新一次。</p>
+          <div class="detect-actions">
+            <button id="refreshBtn" class="btn wide" type="button" disabled>刷新全部</button>
+            <div class="btn-row">
+              <button id="readCalBtn" class="btn" type="button" disabled>读标定</button>
+              <button id="readLimitsBtn" class="btn" type="button" disabled>读限位</button>
+            </div>
+          </div>
+          <p class="fine">STOP 保持最后目标；ESTOP 锁存，需 CLEAR；已标定时 CLEAR 还要求三舵机都在线。CLEAR 不会主动让关节运动。</p>
+        </section>
+      </div>
+
+      <div class="tab-panel" id="panel-test" role="tabpanel" hidden>
+        <section class="card">
+          <h2>单关节低速测试 · <span id="testJoint">ID3</span></h2>
+          <p class="fine">JOG 只发当前关节，10 Hz 重发，到位或超时自动停止。测试目标在 safe 两端各内缩 10°；先扶住，随时按停止。「停止测试」会停住所有在线关节。</p>
+          <div class="safe-line" id="testSafe">标定/限位未就绪</div>
+          <p id="testGate" class="test-gate" role="status" aria-live="polite">正在读取状态…</p>
+          <div class="test-live"><b id="testQNow">q —</b><span id="testRawNow">raw —</span></div>
+          <input id="testSlider" class="test-slider" type="range" min="0" max="100" step="1" value="0" disabled aria-label="目标角度滑块">
+          <div class="test-target">
+            <label class="inline-field">目标 q（度）<input id="testQ" type="number" inputmode="decimal" step="1" value="0" disabled></label>
+            <label class="inline-field">速度<select id="testSpeed" disabled>
+              <option value="5">5°/s · 很慢</option>
+              <option value="10" selected>10°/s · 慢</option>
+              <option value="20">20°/s · 中</option>
+              <option value="30">30°/s · 快</option>
+              <option value="52">52°/s · 最快</option>
+            </select></label>
+            <button id="testGoBtn" class="btn" type="button" disabled>去这个角度</button>
+          </div>
+          <div class="btn-row">
+            <button id="testStepDown" class="btn tiny" type="button" disabled>−5°</button>
+            <button id="testStepUp" class="btn tiny" type="button" disabled>+5°</button>
+            <button id="testMinBtn" class="btn" type="button" disabled>去 safe MIN</button>
+            <button id="testMaxBtn" class="btn" type="button" disabled>去 safe MAX</button>
+            <button id="testStopBtn" class="btn dark" type="button" disabled>停止测试</button>
+          </div>
+          <p id="testMsg" class="fine" role="status" aria-live="polite">当前关节在线、标定有效、已上力后才可用；其他关节不需要在线。目标角度会被限制在 safe 区间内。</p>
+        </section>
+        <section class="card" style="margin-top:12px">
+          <h2>整机低速测试 · POSE</h2>
+          <p class="fine">依次把每个关节扫到 safe 两端（各内缩 10°），其余关节保持参考姿态，最后回参考姿态。10 Hz 重发 <code>POSE</code>，每步到位/超时 STOP；页面保持前台。先扶住、清空工作区，随时按停止。</p>
+          <div class="safe-line" id="poseSafe">三关节 safe 区间未就绪</div>
+          <p id="poseGate" class="test-gate" role="status" aria-live="polite">正在读取状态…</p>
+          <div class="test-live"><b id="poseQNow">q —</b><span id="poseTargetLabel">目标 q —</span></div>
+          <div class="test-target">
+            <label class="inline-field">速度<select id="poseSpeed" disabled>
+              <option value="5">5°/s · 很慢</option>
+              <option value="10" selected>10°/s · 慢</option>
+              <option value="20">20°/s · 中</option>
+            </select></label>
+            <button id="poseGoBtn" class="btn" type="button" disabled>开始整机测试（全行程）</button>
+            <button id="poseStopBtn" class="btn dark" type="button" disabled>停止整机测试</button>
+          </div>
+          <p id="poseMsg" class="fine" role="status" aria-live="polite">三颗标定、上力后可用；POSE 会同时驱动三个关节。</p>
+        </section>
+      </div>
+    </section>
   </div>
 
-  <section class="card terminal-card servo-terminal" aria-label="串口日志">
-    <div class="card-head">
-      <h2>LT100P/1 串口日志</h2>
-      <button id="clearLog" class="btn tiny dark" type="button">清空</button>
+  <details class="terminal-card terminal-drawer" id="terminalDrawer">
+    <summary><span>LT100P/1 串口日志</span><span class="drawer-hint">命令与回复 · 高级调试</span></summary>
+    <div class="terminal-body">
+      <div class="card-head">
+        <h2>09 串口</h2>
+        <button id="clearLog" class="btn tiny dark" type="button">清空</button>
+      </div>
+      <div id="log" class="terminal" role="log" aria-live="polite"></div>
+      <form id="sendForm" class="send-row">
+        <span class="prompt" aria-hidden="true">&gt;</span>
+        <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="直接发命令，例如 STATE / CAL STATUS / LIMITS" disabled aria-label="LT100 命令">
+        <button class="btn primary" type="submit" id="sendBtn" disabled>发送</button>
+      </form>
+      <div class="quick-row">
+        <button class="chip" type="button" data-cmd="HELLO">HELLO</button>
+        <button class="chip" type="button" data-cmd="STATE">STATE</button>
+        <button class="chip" type="button" data-cmd="CAL STATUS">CAL STATUS</button>
+        <button class="chip" type="button" data-cmd="LIMITS">LIMITS</button>
+      </div>
     </div>
-    <div id="log" class="terminal" role="log" aria-live="polite"></div>
-    <form id="sendForm" class="send-row">
-      <span class="prompt" aria-hidden="true">&gt;</span>
-      <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="直接发命令，例如 STATE / CAL STATUS / LIMITS" disabled aria-label="LT100 命令">
-      <button class="btn primary" type="submit" id="sendBtn" disabled>发送</button>
-    </form>
-    <div class="quick-row">
-      <button class="chip" type="button" data-cmd="HELLO">HELLO</button>
-      <button class="chip" type="button" data-cmd="STATE">STATE</button>
-      <button class="chip" type="button" data-cmd="CAL STATUS">CAL STATUS</button>
-      <button class="chip" type="button" data-cmd="LIMITS">LIMITS</button>
-    </div>
-  </section>
+  </details>
 
-  <section class="card help-card">
-    <h2>第一次用</h2>
+  <details class="card help-card">
+    <summary><span>第一次用 / 安全说明</span><span class="drawer-hint">展开看完整步骤</span></summary>
     <ol class="plain">
       <li>烧录 <code>09_servo_basic</code>（基于公版 <code>LT100Core</code>），12V 5A 接好并打开，USB-C 接电脑；手扶住手臂。</li>
-      <li>双击 <code>start-servo-console.bat</code>；它启动本机串口桥并打开本页。桥不可用时才回退 Web Serial。</li>
+      <li>双击 <code>start-lt100.bat</code> 打开应用门户，点「标定与检测台」；也可以直接双击 <code>start-servo-console.bat</code>。它们都会启动本机串口桥；桥不可用时才回退 Web Serial。</li>
       <li>点「连接串口」，确认 <b>3/3 在线</b>；0/3 先查 12V、3P 线和 ID 1/2/3。</li>
-      <li>选腕 ID3 → 扶住 →「卸力」→ 手移到参考姿态，填 q →「CAL REF」→ 选方向 →「CAL DIR」。</li>
-      <li>手移到 <b>raw 较小</b> 的一端 →「MARK MIN」；移到 <b>raw 较大</b> 的一端 →「MARK MAX」；「CAL SAVE」。</li>
-      <li>对 ID2、ID1 重复；三个关节都有效后，「TORQUE ON」→ 在「检测与维护」里刷新 → 用低速端点测试验证。</li>
+      <li>选腕 ID3 → 扶住 → 卡片底部「卸力」→ 手移到参考姿态，填 q →「CAL REF」→ 选方向 →「CAL DIR」。</li>
+      <li>手移到行程一端 →「标记一端」；再移到另一端 →「标记另一端」；顺序随意，固件取含 Z 的弧为行程；前提是 Z 在允许行程内；行程最好不跨 0，跨了就在向导下方选保留含 Z 的一段；「CAL SAVE」。</li>
+      <li>对 ID2、ID1 重复；某个关节标定有效、上力后，就能在「端点测试」里单独试它；三颗都齐了再做整机测试。</li>
     </ol>
     <p class="fine">标定台运行时会占用串口；Arduino IDE 的串口监视器要先关掉，烧录前也要先关标定台。桥只监听 127.0.0.1，页面必须从 localhost 打开。<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
     <p class="fine">协议、字段和错误码：<a href="../docs/design/common-platform.md">common-platform.md §8</a> · <a href="../docs/teach/servo-basic.md">servo-basic.md</a>；固件：<a href="../examples/09_servo_basic/09_servo_basic.ino">09_servo_basic.ino</a>。</p>
-  </section>
+  </details>
 </main>
 
 <footer class="wrap serial-footer">
-  LT100 · 公版标定与检测台 · <a href="index.html#servo">舵机原理</a> · <a href="serial.html">串口控制台</a>
+  LT100 · 09 标定与检测台 · <a href="index.html#apps">所有应用</a> · <a href="index.html#servo">舵机原理</a> · <a href="serial.html">08 控制台</a>
 </footer>
 
 <script type="module" src="servo.js"></script>

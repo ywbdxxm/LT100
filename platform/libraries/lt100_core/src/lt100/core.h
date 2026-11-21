@@ -17,6 +17,9 @@ class ServoBus {
                          const int16_t pos[kJointCount],
                          const uint16_t speed[kJointCount],
                          const uint8_t acc[kJointCount]) = 0;
+  virtual bool writePos(uint8_t id, int16_t pos, uint16_t speed, uint8_t acc) = 0;
+  virtual bool readId(uint8_t id, uint8_t& out) = 0;
+  virtual bool writeId(uint8_t oldId, uint8_t newId) = 0;
   virtual bool torque(uint8_t id, bool on) = 0;
 };
 
@@ -62,8 +65,11 @@ class Core {
  private:
   void dispatch(const Command& cmd);
   void handlePose(const Command& cmd);
+  void handleJog(const Command& cmd);
+  void handleRawMove(const Command& cmd);
   void handleTorque(const Command& cmd);
   void handleCal(const Command& cmd);
+  void handleId(const Command& cmd);
   void handleClear();
   void readAll();
   void setFault(Error error, uint8_t joint = 0);
@@ -88,6 +94,7 @@ class Core {
   uint8_t previousOnlineMask_ = 0;
   uint8_t torqueMask_ = 0;
   bool torqueKnown_ = false;
+  bool jogMotion_ = false;
 
   Mode mode_ = Mode::Boot;
   Error lastError_ = Error::None;

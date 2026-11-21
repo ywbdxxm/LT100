@@ -12,6 +12,8 @@ enum class Verb : uint8_t {
   State,
   Stream,
   Pose,
+  Jog,
+  Raw,
   Stop,
   Estop,
   Torque,
@@ -19,10 +21,13 @@ enum class Verb : uint8_t {
   CalRef,
   CalDir,
   CalMark,
+  CalSplit,
   CalSave,
   CalClear,
   Limits,
   Clear,
+  IdGet,
+  IdSet,
 };
 
 struct Command {
@@ -37,6 +42,10 @@ struct Command {
   int8_t sign = 1;
   float q = 0.0f;
   int8_t mark = 0;    // -1 = MIN, +1 = MAX
+  int8_t split = 0;   // -1 = keep low side, +1 = keep high side
+  int16_t raw = 0;    // RAW move target (uncalibrated install only)
+  bool hasRaw = false;
+  uint8_t newId = 0;  // ID SET target
 };
 
 struct ParseResult {

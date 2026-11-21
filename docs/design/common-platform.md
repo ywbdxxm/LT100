@@ -206,7 +206,7 @@ raw_target = zero_raw + sign * (q_deg - zero_q) * 4096 / 360
 
 约束：
 
-- `min_raw < max_raw`；`max-min > 2*margin`；不处理跨 0/4095 的环形区间（v1 直接拒绝）。
+- 保存要求 `min_raw < max_raw`；`max-min > 2*margin`；跨 0 的行程先用 `CAL SPLIT` 截断成一段（v1 不做多圈环形运动）。
 - `zero_raw` 必须落在 `min_raw+margin .. max_raw-margin` 内；参考姿态本身必须是安全可达姿态，否则拒绝保存。
 - 零位必须来自**可复现的机械姿态**（治具/标记姿态/底座刻度），不能每节课随手改。
 - **没有机械硬限位**：标定出来的 `min_raw/max_raw` 是唯一保护。标定必须按“扶住 → 卸力 → 慢移到安全端点 → MARK → 慢移到另一端点 → MARK → 保存”的顺序，端点要留 `margin`，不能拿撞死点当端点。
@@ -425,6 +425,8 @@ HELLO
 STATE
 STREAM ON|OFF
 POSE seq=<n> q=<q1>,<q2>,<q3> speed=<deg/s> acc=<0..254>
+JOG seq=<n> id=<1..3> q=<deg> speed=<deg/s> acc=<0..254>
+RAW id=<1..3> raw=<0..4095> speed=<deg/s> acc=<0..254>
 STOP
 ESTOP
 TORQUE <id|all> ON|OFF
@@ -432,26 +434,34 @@ CAL STATUS
 CAL REF <id> <q_deg>              # 当前姿态记为模型角 q_deg（含参考姿态偏移）
 CAL DIR <id> +1|-1                # raw 增大时 q 的方向
 CAL MARK <id> MIN|MAX             # 当前 raw 记为 raw 端点
+CAL SPLIT <id> LOW|HIGH           # 跨 0 时保留 0..MAX 或 MIN..4095 一段
 CAL SAVE
 CAL CLEAR <id|all>
 LIMITS
 CLEAR
+ID GET
+ID SET <1..3>
 ```
 
-- `POSE`：三关节目标，度；固件换算 raw、检查限位/模式/标定；最新覆盖。`speed` 为度/秒（1..52，默认 22），固件按 `speed*4096/360` 换成舵机刻度/秒；`acc` 是舵机加速度寄存器（0..254），不是物理 deg/s²。
-- `STOP`：立即停止运动，保持最后目标；幂等。
-- `ESTOP`：锁存急停；停止接受运动，尽最大可能保持位置（扭矩保持）；不自动卸力；物理急停/断电另做。`CLEAR` 后才能恢复。
-- `TORQUE OFF`：卸力；需人工确认；可能导致手臂掉落。
+- `POSE`：三关节目标，度；固件换算 raw、检查限位/模式/标定；最新覆盖。`speed` 为度/秒（1..52，默认 22），固件按 `speed*4096/360` 换成舵机刻度/秒；`acc` 是舵机加速度寄存器（0..254），不是物理 deg/s²。**流式命令**：进入 `MOTION` 后 300 ms 内没有新 `POSE` 会判 `LinkLost`；网页整机测试以 10 Hz 重发，到位或超时用 `STOP` 收尾。
+- `JOG`：**单关节**目标，只要求该关节在线、标定有效、该关节扭矩已开；其余关节不受影响。一次性目标，不要求 20Hz 连续发送，也不会触发 POSE 的 300ms 失联错误。端点测试用它，所以单舵机标定完就能测试。
+- `RAW`：**安装定位专用**。要求总线上恰好只有这一颗舵机、该关节没有标定记录（`calibrationJointValid` 为假）、该关节扭矩已开；直接写 0..4095 的 raw，**不经过 safe 区间**。一次性目标，语义同 JOG。已有标定记录的关节拒绝（`ERR 11`），避免绕过限位；装舵盘/对齿时由网页「配 ID」页使用。
+- **行程跨 0**：raw 是单圈 0–4095。ST3215 默认角度模式（mode 0）把目标位置当作 0..4095 的绝对角度，按“目标 − 当前”的符号决定方向；跨 0 的目标会让它朝反方向走长路径，越过端点。安装时应先接标定工具扫行程，让 0 点落在机械行程外。已经装好且跨 0 时，两个 `CAL MARK` 照常记录（`min_raw > max_raw`），但 `CAL SAVE` 拒绝（`ERR 08`），必须先用 `CAL SPLIT <id> LOW|HIGH` 保留一段：`LOW` 保留 `0..max`，`HIGH` 保留 `min..4095`；只有含 `zero_raw`（且离接缝 ≥ margin）的一段可用，另一段不可达，接缝端不是机械端点。要完整支持跨 0 需改用多圈模式（mode 3，±7 圈；掉电圈数不保存），固件未实现。`rawToQ/qToRaw` 仍沿**标定弧**换算，非跨 0 的超过 180° 行程没有歧义。
+- `STOP`：立即原地停住（把当前姿态写回目标，让舵机减速）；模式回 READY，仍可继续接命令；幂等。
+- `ESTOP`：锁存急停；收到时立即读当前位置并写回作为目标，让**在途运动当场减速停住**，然后保持位置（扭矩保持）；不自动卸力；物理急停/断电另做。`CLEAR` 后才能恢复。
+- `TORQUE OFF`：卸力；需人工确认；可能导致手臂掉落。任何时候都允许。
+- `TORQUE ON`：已标定的关节必须在线且当前 raw 在标定行程内，否则拒绝并返回 `ERR 10`（关节被手挪出行程，先推回去）；通过后先把目标设为**当前姿态**再使能，防止上力瞬间跳到上一个残留目标。
 - `STREAM ON|OFF`：打开/关闭 10Hz 周期 `STATE`；默认关闭，`STATE` 可随时主动查询。
-- `CAL`：只在 `TORQUE OFF` 下操作；`CAL REF/DIR/MARK` 进入 `CAL` 模式，`CAL SAVE` / `CAL CLEAR` 退出；`CAL SAVE` 校验后写 NVS，部分标定会停在 `UNCAL`。
+- `CAL`：只在 `TORQUE OFF` 下操作；`CAL REF/DIR/MARK` 进入 `CAL` 模式，`CAL SAVE` / `CAL CLEAR` 退出；`CAL SAVE` 校验后写 NVS，部分标定会停在 `UNCAL`。两个 `CAL MARK` 的顺序随意：固件取两个端点之间**包含参考姿态**的那段弧作为行程，并把端点规范化成 `minRaw -> maxRaw`（沿 raw 增大方向）。**前提：参考姿态必须落在操作者想允许的行程内；若参考姿态在行程外，固件会改选包含它的补弧，标定仍会保存成功、显示有效，但实际行程是反的。** 几何上无法区分“人想允许的弧”和“包含参考姿态的弧”，这一点只能由操作者保证。**跨 0 的行程在 `CAL SAVE` 时会被拒绝**（`ERR 08`）：默认角度模式不能执行跨 0 的目标；两个 `MARK` 之后用 `CAL SPLIT <id> LOW|HIGH` 保留含 Z 的一段，另一段作废。已存在于 NVS 的跨 0 标定仍可读回检查，但不进入有效位、不能用于运动。
 - `LIMITS`：输出每关节 raw 端点与含 margin 的 safe 区间。
+- `ID GET` / `ID SET <1..3>`：读/改**当前唯一在线**舵机的 EEPROM ID。总线上多于一颗返回 `busy`，一颗都没有返回 `servo_offline`；写完自动读回验证。用于把出厂默认 ID1 的舵机分配成 肩=1 / 肘=2 / 腕=3。FAULT 下也可用，方便换舵机后先配 ID 再恢复。
 - `CLEAR`：清除 FAULT/ESTOP；已标定时要求三舵机都在线，否则保持故障；非故障状态为幂等 no-op。
 - **0.1.0 未实现**：`PRESET`、`LED`、`EVT`。复杂轨迹由主机发送；预设/灯效后续加。
 
 ### 8.3 事件
 
 ```text
-HELLO protocol=1 fw=0.1.0 cal=1 features=state,stream,motion,cal,limits
+HELLO protocol=1 fw=0.1.0 cal=1 features=state,stream,motion,jog,raw,cal,limits,id,split
 STATE seq=42 mode=READY online=7 cal=7 torque=7 err=0 age=12 q=20.0,0.0,-10.0 raw=2276,2048,1934 load=100,100,100 cur=20,20,20 v=120 t=39,40,38
 ERR code=10 seq=42 joint=0 msg=outside_safe
 ```

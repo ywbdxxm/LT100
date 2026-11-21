@@ -14,7 +14,18 @@
     statUp: $('statUp'), statHeap: $('statHeap'), statRxTx: $('statRxTx'), statCmds: $('statCmds'),
     statMode: $('statMode'), statBright: $('statBright'), statText: $('statText'),
     swatch: $('swatch'), infoLine: $('infoLine'), streamBtn: $('streamBtn'),
+    lightRing: $('lightRing'), lightSummary: $('lightSummary'), oledText: $('oledText'),
+    textError: $('textError'),
   };
+
+  let previewMode = 'SOLID';
+  let previewColor = '#FF6600';
+  let previewBright = 20;
+  for (let i = 0; i < 24; i++) {
+    const dot = document.createElement('span');
+    dot.style.setProperty('--i', String(i));
+    ui.lightRing.appendChild(dot);
+  }
 
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
@@ -33,6 +44,7 @@
   let closing = false;
   let sawRx = false;
   let streamOn = false;
+  let wrongFirmware = false;
   let history = [];
   let historyIndex = 0;
 
@@ -88,12 +100,30 @@
     ui.disconnectBtn.disabled = !on;
   }
 
+  const MODE_NAMES = { SOLID: '单色', RAINBOW: '彩虹', BREATHE: '呼吸', OFF: '关灯' };
+
+  function renderPreview() {
+    const dots = ui.lightRing.children;
+    ui.lightRing.classList.toggle('breathe', previewMode === 'BREATHE');
+    const base = previewMode === 'OFF' ? 0.12 : 0.25 + 0.75 * (previewBright / 40);
+    for (let i = 0; i < dots.length; i++) {
+      const color = previewMode === 'RAINBOW'
+        ? `hsl(${i * 15} 80% 58%)`
+        : previewMode === 'OFF' ? '#a8a29e' : previewColor;
+      dots[i].style.background = color;
+      dots[i].style.opacity = String(base);
+    }
+    ui.lightSummary.textContent = `${MODE_NAMES[previewMode] || previewMode} · ${previewBright}%`;
+  }
+
   function setActiveMode(mode) {
     const wanted = String(mode || '').toUpperCase();
+    previewMode = wanted || 'SOLID';
     ui.modeSeg.querySelectorAll('[data-mode]').forEach((button) => {
       button.classList.toggle('active', button.dataset.mode === wanted);
     });
     ui.statMode.textContent = wanted || '—';
+    renderPreview();
   }
 
   function normalizeColor(value, addHash) {
@@ -105,17 +135,21 @@
   function setColor(value, updateInput) {
     const hex = normalizeColor(value, true);
     if (!hex) return;
+    previewColor = hex;
     ui.colorHex.textContent = hex;
     ui.swatch.style.background = hex;
     if (updateInput) ui.color.value = hex.toLowerCase();
+    renderPreview();
   }
 
   function setBright(value, updateInput) {
     const number = Math.max(0, Math.min(40, Number(value)));
     if (!Number.isFinite(number)) return;
+    previewBright = number;
     if (updateInput) ui.bright.value = String(number);
     ui.brightOut.textContent = `${number}%`;
     ui.statBright.textContent = `${number}%`;
+    renderPreview();
   }
 
   function setStream(on) {
@@ -157,6 +191,13 @@
     if (stat.color) setColor(stat.color, true);
     if (typeof stat.bright === 'number') setBright(stat.bright, true);
     ui.statText.textContent = stat.text ? stat.text : '—';
+    setOledText(stat.text || '');
+  }
+
+  function setOledText(text) {
+    const value = String(text || '');
+    ui.oledText.textContent = value || 'LT100';
+    ui.oledText.style.opacity = value ? '1' : '.35';
   }
 
   function updateInfo(info) {
@@ -170,6 +211,16 @@
     sawRx = true;
     const kind = line.startsWith('ERR ') ? 'err' : 'rx';
     appendLog(kind, line);
+
+    if (/^HELLO\s+protocol=1/i.test(line)) {
+      if (!wrongFirmware) {
+        wrongFirmware = true;
+        ui.support.hidden = false;
+        ui.support.innerHTML = '检测到 <b>09 公版固件</b>，不是 08 串口控制台。请 <a href="servo.html">打开 09 标定与检测台</a>；本页的灯/屏幕按钮不会工作。';
+        setConnState('固件不匹配', 'busy');
+      }
+      return;
+    }
 
     if (line.startsWith('{')) {
       try {
@@ -189,7 +240,10 @@
     match = line.match(/^OK bright=(\d+)/i);
     if (match) { setBright(Number(match[1]), true); return; }
     match = line.match(/^OK stream=([01])/i);
-    if (match) { setStream(match[1] === '1'); }
+    if (match) { setStream(match[1] === '1'); return; }
+    match = line.match(/^OK text=(.*)$/i);
+    if (match) { setOledText(match[1]); return; }
+    if (/^OK text cleared/i.test(line)) setOledText('');
   }
 
   async function sendCommand(raw, options = {}) {
@@ -339,6 +393,8 @@
 
   async function connect() {
     if (!canUse || port) return;
+    wrongFirmware = false;
+    ui.support.hidden = true;
     setConnState('连接中…', 'busy');
     ui.connectBtn.disabled = true;
     try {
@@ -370,6 +426,7 @@
       await sendCommand('PING');
       await sendCommand('INFO');
       await sendCommand('STAT');
+      await sendCommand('HELLO', { echo: false });
       setTimeout(() => {
         if (port && !sawRx) {
           appendLog('sys', '已连接，但 2.5 秒内没收到回复：确认板子烧的是 08，串口监视器已关闭，必要时按 EN。');
@@ -395,12 +452,20 @@
 
   function sendText() {
     const text = ui.text.value.trim();
-    if (!text) { appendLog('err', '先输入要显示的文字'); return; }
+    ui.textError.hidden = true;
+    if (!text) {
+      ui.textError.textContent = '先输入要显示的文字。';
+      ui.textError.hidden = false;
+      return;
+    }
     if (!/^[\x20-\x7E]{1,20}$/.test(text) || /["\\]/.test(text)) {
-      appendLog('err', 'TEXT 只支持 1–20 个 ASCII 字符，不能包含双引号或反斜杠');
+      ui.textError.textContent = '只支持 1–20 个 ASCII 字符，不能包含双引号或反斜杠。';
+      ui.textError.hidden = false;
       return;
     }
     sendCommand(`TEXT ${text}`);
+    setOledText(text);
+    setTimeout(() => { if (ui.oledText.textContent === text) setOledText(''); }, 5000);
   }
 
   // A tiny in-page emulator for UI testing: open serial.html?mock=1

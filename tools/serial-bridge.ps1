@@ -31,16 +31,44 @@ if (-not $ComPort) {
 
 Log "bridge starting: $ComPort on ws://127.0.0.1:$Port/serial"
 
-$serial = [System.IO.Ports.SerialPort]::new($ComPort, 115200, 'None', 8, 'One')
-$serial.ReadBufferSize = 8192
-$serial.ReadTimeout = 100
-$serial.DtrEnable = $false
-$serial.RtsEnable = $false
-try {
-    $serial.Open()
-} catch {
-    Log "serial open failed: $($_.Exception.Message)"
-    throw
+$script:serial = $null
+$script:serialDownLogged = $false
+
+function Close-Serial {
+    if ($script:serial) {
+        try { $script:serial.Close() } catch {}
+        try { $script:serial.Dispose() } catch {}
+    }
+    $script:serial = $null
+}
+
+# CP210x can drop its handle (USB suspend/re-enumeration). Keep the bridge
+# alive and reopen instead of leaving every client with "端口被关闭".
+function Open-Serial {
+    if ($script:serial -and $script:serial.IsOpen) { return $true }
+    Close-Serial
+    try {
+        $s = [System.IO.Ports.SerialPort]::new($ComPort, 115200, 'None', 8, 'One')
+        $s.ReadBufferSize = 8192
+        $s.ReadTimeout = 100
+        $s.DtrEnable = $false
+        $s.RtsEnable = $false
+        $s.Open()
+        $script:serial = $s
+        if ($script:serialDownLogged) { Log "serial reopened: $ComPort" }
+        $script:serialDownLogged = $false
+        return $true
+    } catch {
+        if (-not $script:serialDownLogged) {
+            Log "serial open failed: $($_.Exception.Message)"
+            $script:serialDownLogged = $true
+        }
+        return $false
+    }
+}
+
+if (-not (Open-Serial)) {
+    Log 'serial unavailable; will retry when a client connects'
 }
 
 $listener = [System.Net.HttpListener]::new()
@@ -78,6 +106,7 @@ try {
             ).GetAwaiter().GetResult()
             $ws = $wsContext.WebSocket
             Log 'client connected'
+            $null = Open-Serial
 
             $buffer = New-Object byte[] 4096
             $segment = [ArraySegment[byte]]::new($buffer)
@@ -108,17 +137,33 @@ try {
                     }
                     if ($result.Count -gt 0 -and $result.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Text) {
                         $text = [Text.Encoding]::UTF8.GetString($buffer, 0, $result.Count)
-                        try { $serial.Write($text) } catch { Log "serial write failed: $($_.Exception.Message)"; break }
+                        if ($script:serial -and $script:serial.IsOpen) {
+                            try { $script:serial.Write($text) } catch {
+                                Log "serial write failed: $($_.Exception.Message)"
+                                Close-Serial
+                            }
+                        } else {
+                            $null = Open-Serial
+                        }
                     }
                     $receive = $ws.ReceiveAsync($segment, [Threading.CancellationToken]::None)
                     continue
                 }
 
+                if (-not ($script:serial -and $script:serial.IsOpen)) {
+                    $null = Open-Serial
+                    if (-not ($script:serial -and $script:serial.IsOpen)) {
+                        Start-Sleep -Milliseconds 300
+                        continue
+                    }
+                }
                 try {
-                    $data = $serial.ReadExisting()
+                    $data = $script:serial.ReadExisting()
                 } catch {
                     Log "serial read failed: $($_.Exception.Message)"
-                    break
+                    Close-Serial
+                    Start-Sleep -Milliseconds 300
+                    continue
                 }
                 if ($data) {
                     $bytes = [Text.Encoding]::UTF8.GetBytes($data)
@@ -145,8 +190,7 @@ try {
         }
     }
 } finally {
-    try { $serial.Close() } catch {}
-    try { $serial.Dispose() } catch {}
+    Close-Serial
     try { $listener.Stop() } catch {}
     try { $listener.Close() } catch {}
     Log 'bridge stopped'

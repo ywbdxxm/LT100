@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LT100 · 主控板</title>
-<meta name="description" content="LT100 三轴平面机械臂台灯的主控板：微雪 Servo Driver with ESP32——接口、参数、OLED、串口、舵机与项目资料位置。">
+<title>LT100 · 主控板与应用</title>
+<meta name="description" content="LT100 三轴平面机械臂台灯：主控板接口、原理、课程，以及按固件划分的应用入口。">
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#faf8f5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b23c07'/%3E%3Ccircle cx='16' cy='12' r='5' fill='%23fff'/%3E%3Crect x='10' y='20' width='12' height='3' rx='1.5' fill='%23fff'/%3E%3C/svg%3E">
@@ -22,12 +22,36 @@
     <a href="#oled">屏幕</a>
     <a href="#serial">串口</a>
     <a href="#servo">舵机</a>
-    <a href="servo.html">标定/检测</a>
-    <a href="serial.html" class="nav-cta">串口控制台</a>
+    <a href="#apps" class="nav-cta">应用</a>
   </div>
 </nav>
 
 <div class="wrap">
+
+  <section id="apps" aria-labelledby="apps-title">
+    <h2 id="apps-title"><span class="n">应用</span>按固件选入口</h2>
+    <p class="sub">每套固件对应一个独立页面。先确认板子上烧的是哪套，再点进去；两套固件互斥，不会同时工作。</p>
+
+    <div class="apps-grid">
+      <a class="app-card app-08" href="serial.html">
+        <span class="app-meta"><span class="app-fw">08 固件</span><span class="app-status">可用</span></span>
+        <span class="app-title">串口控制台</span>
+        <span class="app-desc">灯环、OLED 文字和板子状态。适合串口课和 <code>08_serial_console</code> 例程。</span>
+        <span class="app-facts"><span>不需要 12V 舵机</span><span>115200 8N1</span></span>
+        <span class="app-go">打开 08 控制台 <span aria-hidden="true">→</span></span>
+      </a>
+
+      <a class="app-card app-09" href="servo.html">
+        <span class="app-meta"><span class="app-fw">09 固件</span><span class="app-status">可用</span></span>
+        <span class="app-title">标定与检测台</span>
+        <span class="app-desc">三关节零点、方向、raw 端点标定，在线/扭矩/电压/温度检测，以及低速端点测试。</span>
+        <span class="app-facts"><span>需要 12V 5A</span><span>先扶住手臂</span></span>
+        <span class="app-go">打开 09 标定台 <span aria-hidden="true">→</span></span>
+      </a>
+    </div>
+
+    <p class="apps-note"><b>不确定烧的是哪套？</b>看 OLED：08 显示 <code>M:模式</code> 和灯状态；09 显示 <code>UNCAL</code> / <code>READY</code> 和三关节 raw。也可以在串口发 <code>HELP</code>（08 有命令表）或 <code>HELLO</code>（09 回协议版本）。</p>
+  </section>
 
   <header class="hero">
     <div class="hero-grid">
@@ -47,6 +71,7 @@
       <div class="kpi"><b>65×30</b><span>mm，孔距 58×23</span></div>
     </div>
   </header>
+
 
   <section id="board">
     <h2><span class="n">认板</span>正面与背面</h2>
@@ -257,8 +282,9 @@
                 </li>
               </ul>
             </li>
-            <li><span class="file">start-web-console.bat</span><span class="what">启动网页串口控制台（localhost）</span></li>
-            <li><span class="file">start-servo-console.bat</span><span class="what">启动网页标定/检测台（localhost）</span></li>
+            <li><span class="file">start-lt100.bat</span><span class="what">启动应用门户（localhost，推荐从这里进）</span></li>
+            <li><span class="file">start-web-console.bat</span><span class="what">直接启动 08 串口控制台（localhost）</span></li>
+            <li><span class="file">start-servo-console.bat</span><span class="what">直接启动 09 标定与检测台（localhost）</span></li>
             <li><span class="dir">examples/</span>
               <ul>
                 <li><span class="dir">01_blink_rgb/</span><span class="what">第一个例程：板载 RGB 闪烁</span>
@@ -324,10 +350,10 @@
             </li>
             <li><span class="dir">web/</span>
               <ul>
-                <li><span class="file">serial.html</span><span class="what">网页串口控制台（本机桥优先，Web Serial 回退）</span></li>
+                <li><span class="file">serial.html</span><span class="what">08 串口控制台（本机桥优先，Web Serial 回退）</span></li>
                 <li><span class="file">serial.css</span><span class="what">控制台样式</span></li>
                 <li><span class="file">serial.js</span><span class="what">桥/串口连接、命令和遥测</span></li>
-                <li><span class="file">servo.html</span><span class="what">公版标定/检测台：三关节状态、CAL、端点测试</span></li>
+                <li><span class="file">servo.html</span><span class="what">09 标定与检测台：三关节状态、CAL、端点测试</span></li>
                 <li><span class="file">servo.css</span><span class="what">标定台布局与关节卡片</span></li>
                 <li><span class="file">servo.js</span><span class="what">LT100P/1 标定流程、检测、mock 模式</span></li>
                 <li><span class="file">lt100-protocol.mjs</span><span class="what">纯协议解析 / raw↔q / 命令构造（可 node --test）</span></li>
@@ -999,7 +1025,7 @@ OK color=#FF6600
     </div>
 
     <div class="note">
-      <b>网页控制台：</b>不用串口工具，也不用 Python。双击 <code>start-web-console.bat</code>，它会启动本机串口桥并打开 <code>http://127.0.0.1:8773/web/serial.html</code>；点「连接串口」自动走桥，桥不可用时才回退 Web Serial。不能直接双击 HTML。<a href="serial.html">打开控制台 →</a>
+      <b>网页控制台：</b>不用串口工具，也不用 Python。双击 <code>start-web-console.bat</code>，它会启动本机串口桥并打开 <code>http://127.0.0.1:8773/web/serial.html</code>；点「连接串口」自动走桥，桥不可用时才回退 Web Serial。不能直接双击 HTML。<a href="serial.html">打开 08 控制台 →</a>
     </div>
 
     <div class="two">
@@ -1063,7 +1089,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
     </div>
 
     <div class="note">
-      <b>网页标定/检测台：</b>烧录公版 <code>09_servo_basic</code>，双击 <code>start-servo-console.bat</code>，浏览器通过本机桥连板子：三关节实时 raw/q/电压/温度/负载/电流、在线/标定/扭矩/故障、标定向导和低速端点测试都在一页。<a href="servo.html">打开标定台 →</a>；08 串口控制台不接舵机。
+      <b>网页标定/检测台：</b>烧录公版 <code>09_servo_basic</code>，双击 <code>start-servo-console.bat</code>，浏览器通过本机桥连板子：三关节实时 raw/q/电压/温度/负载/电流、在线/标定/扭矩/故障、标定向导和低速端点测试都在一页。<a href="servo.html">打开 09 标定台 →</a>；08 串口控制台不接舵机。
     </div>
 
     <div class="servo-intro">
@@ -1207,6 +1233,114 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
       <figcaption>每台机器、每个关节单独标定 MIN / MAX；不要抄别人的数字，也不要把 2048 当默认中位。</figcaption>
     </figure>
 
+    <h3 id="calibration" style="font-size:17px;margin:28px 0 4px">标定：把 raw 变成可用的关节角</h3>
+    <p>标定不是“设中位”，也不是抄一组数字。它要回答三个问题：<b>哪个姿势算零</b>、<b>哪个方向算正</b>、<b>手能安全走到哪两端</b>。三样都记下来并通过校验，这个关节才算能用。</p>
+
+    <div class="two">
+      <div class="box">
+        <h3>标定记录四件事</h3>
+        <ol class="plain">
+          <li><b>参考姿态：</b>你用手摆一个确定的姿势，告诉固件“现在这个位置对应模型角 q”。它同时定义了零点。</li>
+          <li><b>方向：</b>规定编码器读数变大时，模型角往正方向还是负方向走。它把编码器刻度接到模型坐标上。</li>
+          <li><b>两个端点：</b>手能到的两个极限位置，各记一次读数。</li>
+          <li><b>校验与保存：</b>三项齐全、两端够远、零点在行程内，才允许保存到板子里。</li>
+        </ol>
+      </div>
+      <div class="box">
+        <h3>参考姿态决定哪段弧是行程</h3>
+        <p>两个端点把一圈分成两段弧，光看两个数分不出哪段是行程。参考姿态是你<b>亲手摆到</b>的姿势，它必然在你手能到的范围里；固件取<b>包含它的那段弧</b>作为行程，另一段是两个机械停位之间的禁区。所以两端谁先标都行。</p>
+        <p class="sub" style="margin:6px 0 0">但机器只能验证“Z 在它选的弧内”，不能验证“它选的弧就是你想允许的弧”。前提是 Z 必须摆在你真正想允许的行程里；这一点只能由人保证。</p>
+      </div>
+    </div>
+
+    <h4 style="margin:20px 0 4px">同样两个端点，参考姿态不同：只有不跨 0 的那段能用</h4>
+    <p class="sub" style="margin:0 0 8px">图中 A=500、B=3500；两图只有参考姿态 Z 不同。橙色是包含 Z 的候选行程；跨 0 的那段会被拒绝。</p>
+    <div class="two">
+      <figure class="servo-fig" style="margin:0">
+        <svg viewBox="0 0 400 400" role="img" aria-label="参考姿态 raw=200 在短弧上，行程为 B 经 0 到 A，MIN 3500 MAX 500 wrap=1">
+          <circle cx="200" cy="205" r="96" fill="none" stroke="#e7e2da" stroke-width="16"></circle>
+          <path d="M124 146.4 A96 96 0 0 1 266.6 136.1" fill="none" stroke="#b23c07" stroke-width="16" stroke-linecap="round"></path>
+          <circle cx="266.6" cy="136.1" r="4.5" fill="#1c1917"></circle>
+          <circle cx="124" cy="146.4" r="4.5" fill="#1c1917"></circle>
+          <circle cx="229" cy="113.5" r="5.5" fill="#b23c07" stroke="#ffffff" stroke-width="2"></circle>
+          <text x="280" y="128" font-size="11" fill="#1c1917">A 500</text>
+          <text x="112" y="132" text-anchor="end" font-size="11" fill="#1c1917">B 3500</text>
+          <text x="239" y="103" font-size="11" fill="#b23c07">Z 200</text>
+          <text x="200" y="94" text-anchor="middle" font-size="10.5" fill="#5f5952">raw 0</text>
+          <text x="200" y="322" text-anchor="middle" font-size="10.5" fill="#5f5952">raw 2048</text>
+          <text x="200" y="348" text-anchor="middle" font-size="12" font-weight="600" fill="#b23c07">行程 = B → 0 → A（跨 0）</text>
+          <text x="200" y="368" text-anchor="middle" font-size="10.5" fill="#5f5952">MIN 3500 · MAX 500 · wrap=1</text>
+          <text x="200" y="386" text-anchor="middle" font-size="10.5" font-weight="600" fill="#b23c07">跨 0 → 保存前选保留一段</text>
+        </svg>
+        <figcaption>参考 raw=200 落在跨 0 的短弧上：这段行程默认角度模式不能执行；保存前用 <code>CAL SPLIT</code> 保留含 Z 的一段（这里保留 0..500），另一段作废。</figcaption>
+      </figure>
+      <figure class="servo-fig" style="margin:0">
+        <svg viewBox="0 0 400 400" role="img" aria-label="参考姿态 raw=2000 在长弧上，行程为 A 到 B，MIN 500 MAX 3500 wrap=0">
+          <circle cx="200" cy="205" r="96" fill="none" stroke="#e7e2da" stroke-width="16"></circle>
+          <path d="M266.6 136.1 A96 96 0 1 1 124 146.4" fill="none" stroke="#b23c07" stroke-width="16" stroke-linecap="round"></path>
+          <circle cx="266.6" cy="136.1" r="4.5" fill="#1c1917"></circle>
+          <circle cx="124" cy="146.4" r="4.5" fill="#1c1917"></circle>
+          <circle cx="207.1" cy="300.7" r="5.5" fill="#b23c07" stroke="#ffffff" stroke-width="2"></circle>
+          <text x="280" y="128" font-size="11" fill="#1c1917">A 500</text>
+          <text x="112" y="132" text-anchor="end" font-size="11" fill="#1c1917">B 3500</text>
+          <text x="218" y="270" font-size="11" fill="#b23c07">Z 2000</text>
+          <text x="200" y="94" text-anchor="middle" font-size="10.5" fill="#5f5952">raw 0</text>
+          <text x="200" y="322" text-anchor="middle" font-size="10.5" fill="#5f5952">raw 2048</text>
+          <text x="200" y="348" text-anchor="middle" font-size="12" font-weight="600" fill="#b23c07">行程 = A → B</text>
+          <text x="200" y="368" text-anchor="middle" font-size="10.5" fill="#5f5952">MIN 500 · MAX 3500 · wrap=0</text>
+          <text x="200" y="386" text-anchor="middle" font-size="10.5" fill="#5f5952">参考姿态在长弧上</text>
+        </svg>
+        <figcaption>同一对端点、参考 raw=2000 落在长弧上：行程 A→B 不跨 0，可以保存。</figcaption>
+      </figure>
+    </div>
+    <div class="box" style="margin:8px 0 0;background:#fff7e8;border-color:#f0d9a8">
+      <p style="margin:0"><b>本方案的前提（不是固件故障）：Z 必须由你放在真正想允许的行程内。</b>固件只知道 Z 在哪，不知道你想允许哪段；它把包含 Z 的那段弧当作行程。如果 Z 在行程外（收纳位、停靠位，或者只是摆错），它会把补弧当成行程；标定仍会保存成功、显示有效，但实际可用的行程是反的。这个判断只能由人负责。</p>
+      <p style="margin:8px 0 0"><b>行程最好不要跨 0。</b>ST3215 默认角度模式把目标当作 0..4095 的绝对角度，按当前值与目标的差值决定方向，不会按标定弧走；跨 0 的目标会让它朝反方向走长路径。装配时先接标定工具扫一遍 raw；已经跨 0 的机器，保存前必须用 <code>CAL SPLIT</code> 保留含 Z 的一段。</p>
+    </div>
+
+    <h4 style="margin:20px 0 4px">跨 0：默认角度模式不能用</h4>
+    <p>raw 是单圈刻度，4095 之后回到 0。固件的区间数学可以表示环形区间，但 <b>ST3215 默认角度模式（mode 0）不能执行跨 0 的行程</b>：它把目标位置当作 0..4095 的绝对角度，按“目标 − 当前”的符号决定方向，不会按你标定的环弧走。</p>
+    <div class="box" style="margin:10px 0;background:#fbf9f5;border-color:var(--line)">
+      <p style="margin:0"><b>现场例子：</b>肩标定 MIN=3396、MAX=650、零点 raw=3851。正角度目标 q=+30° 换算出 raw=96；舵机看到当前 3851、目标 96，差值是 <code>−3755</code>，于是朝<b>负方向</b>走 3755 tick，越过 MIN 3396，直到固件看 raw 出行程报 <code>ERR 10</code>。它不会走 3851 → 4095 → 0 → 96 这条 340 tick 的短弧。</p>
+    </div>
+    <p><b>首选：让行程不跨 0。</b>装配时先接标定工具，手动扫一遍关节，看 raw 是否经过 4095→0；经过就换一个舵盘齿/转舵机安装位，把 0 点移出机械行程，再重新标定。这样行程一点不丢。</p>
+    <p><b>已经装好、来不及改机械：</b>两个 <code>CAL MARK</code> 照常记录，保存前用 <code>CAL SPLIT &lt;id&gt; LOW|HIGH</code> 在接缝处截断，只保留一段——<code>LOW</code> 留 <code>0..MAX</code>，<code>HIGH</code> 留 <code>MIN..4095</code>。只能保留<b>包含 Z</b> 的那段；另一段不含 0°，固件拒绝。接缝端不是机械端点，手臂会在中途停住，丢掉的行程拿不回来。网页在标出跨 0 后会自动弹出两段让你确认。</p>
+    <p class="sub" style="margin:6px 0 0">想保留另一段？只能在保存前把手臂摆到那段里，重跑 <code>CAL REF</code> 把新的 q=0 放在那里——这会改变参考姿态的含义。ST3215 多圈模式（mode 3）能真正跨 0，但掉电丢圈数、要改 EEPROM，LT100 当前未启用。</p>
+
+    <div class="box" style="margin-top:12px">
+      <h3>什么叫“这个关节标好了”</h3>
+      <ul class="plain">
+        <li><b>三项齐全：</b>参考姿态、方向、两个端点都记录了。</li>
+        <li><b>两个端点够远：</b>至少隔 80 个刻度（约 7°）；太近说明两次标记几乎在同一处。</li>
+        <li><b>参考姿态在中间：</b>离两端各至少 40 个刻度（约 3.5°）；贴着端点，行程方向就说不清，也没给减速留余量。</li>
+        <li><b>行程最好不跨 0：</b>装配时先扫 raw 再定安装；已经跨 0 时，保存前必须用 <code>CAL SPLIT</code> 保留含 Z 的一段，另一段不可达。</li>
+        <li><b>三个关节都有效：</b>才进入就绪，才允许整机运动。</li>
+      </ul>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>操作顺序（网页向导）</h3>
+      <ol class="steps">
+        <li><b>卸力</b><span>扶住手臂，先做腕，再做肘、肩。</span></li>
+        <li><b>摆参考姿态</b><span>把关节放到一个确定的姿势，记录它对应的模型角。</span></li>
+        <li><b>定方向</b><span>用手转一点，看读数变大还是变小，选 + 或 −。</span></li>
+        <li><b>标两个端点</b><span>转到行程一端标记 MIN，再到另一端标记 MAX；先后随意。前提是 Z 在允许行程内；行程最好不跨 0，跨了就在下一步选保留含 Z 的一段。</span></li>
+        <li><b>保存</b><span>通过校验后写进板子，断电不丢。</span></li>
+        <li><b>上力测试</b><span>先把关节移回安全区，再低速把两端各走一遍。</span></li>
+      </ol>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>常见坑</h3>
+      <ul class="plain">
+        <li><b>第二次标记被拒：</b>两端太近（不足 80 刻度），或参考姿态离端点不足 40 刻度。跨 0 不会在标记阶段被拒；要在保存前用 <code>CAL SPLIT</code> 保留含 Z 的一段。</li>
+        <li><b>标完能保存但范围不对：</b>多半是 Z 放在了允许行程外，固件选了包含 Z 的补弧。把 Z 移进你要允许的行程，重标两端——这个错误不会报 ERR 8。</li>
+        <li><b>上力被拒：</b>关节被手挪出了标定行程。推回去再上力，固件不会硬闯。</li>
+        <li><b>方向反了：</b>重设方向；不要用交换两个端点去“修”，那会把行程也换掉。</li>
+      </ul>
+      <p class="sub" style="margin:8px 0 0">断电不用重标；换舵机、拆臂、换安装孔或整片擦除才需要重新标定。</p>
+    </div>
+
     <div class="two">
       <div class="box">
         <h3>四道防线</h3>
@@ -1218,10 +1352,10 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
         </ol>
       </div>
       <div class="box">
-        <h3>标定不是“设中位”</h3>
-        <p>标定是记录这个关节<b>实际允许的两个 raw 端点</b>：把臂慢慢移到 raw 较小的一侧，读回原始刻度，记为 MIN；再移到 raw 较大的一侧，记为 MAX。MIN 不一定是机械上的“下”。</p>
-        <p>标定值存在 ESP32 的 NVS 里，断电不丢。换舵机、拆臂、换安装孔后必须重新标定。</p>
-        <p>如果关节的行程跨过 0/4095 边界，简单的数值 min/max 会失效；先换一个舵盘齿避开，或明确要求扩展成环形区间。</p>
+        <h3>每台机器留一份标定表</h3>
+        <p>装配差异会变，数字不能跨机器抄。建议每台机器记一行，换舵机/拆臂后重新标并更新：</p>
+        <pre><code>ID | 关节 | 零点读数 | 方向 | 端点 A | 端点 B | 标定人 | 日期</code></pre>
+        <p class="sub" style="margin:8px 0 0">标定值在板子里，断电不丢；网页「状态」页随时能读回来核对。</p>
       </div>
     </div>
 
@@ -1352,48 +1486,28 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
         <li><b>断电接线，再接 12V</b><span>接线时 12V 先关；3P 总线串好，USB-C 接电脑，手扶住手臂。接好后打开 <b>12V 5A</b>；USB 只给 ESP32/串口。</span></li>
         <li><b>安装公版库并上传 09</b><span>Arduino IDE 需要 <code>LT100Core</code> 和 <code>LT100Board</code> 两个库（见 <a href="../platform/README.md">platform/README.md</a>）；用 CLI 则把 <code>--libraries</code> 指向 <code>platform\libraries</code>。上传 <code>examples\09_servo_basic</code>。</span></li>
         <li><b>确认在线</b><span>打开标定台，连接后看 <code>3/3</code> 在线；<code>0/3</code> 先查 12V、3P 线、ID 1/2/3。不要继续标定。</span></li>
-        <li><b>标定腕（建议先 ID3）</b><span>扶住 → 卸力 → 移到参考姿态，填 q → <code>CAL REF</code> → 选方向 → <code>CAL DIR</code> → 移到 raw 较小端 <code>CAL MARK MIN</code> → 移到 raw 较大端 <code>CAL MARK MAX</code>。</span></li>
+        <li><b>标定腕（建议先 ID3）</b><span>扶住 → 卸力 → 移到参考姿态，填 q → <code>CAL REF</code> → 选方向 → <code>CAL DIR</code> → 移到行程一端 <code>CAL MARK MIN</code> → 移到另一端 <code>CAL MARK MAX</code>（顺序随意；Z 必须在允许行程内，且行程不能跨 0）。</span></li>
         <li><b>保存并重复</b><span><code>CAL SAVE</code> 写 NVS 并退出 CAL；对肘 ID2、肩 ID1 重复。三个关节都有效才进入 READY。</span></li>
         <li><b>上力 + 端点测试</b><span>先把手臂移回 safe 区间，再 <code>TORQUE all ON</code>；用页面低速端点测试验证不撞、不夹线、不超温，随时 STOP / ESTOP / 断电。</span></li>
       </ol>
       <p class="sub" style="margin:8px 0 0">标定值写入 NVS，断电不丢；换舵机、拆臂或换安装孔后，用 <code>CAL CLEAR all</code> 清掉重标。</p>
-      <pre style="margin-top:12px"><code>&gt; HELLO
-HELLO protocol=1 fw=0.1.0 cal=1 features=state,stream,motion,cal,limits
-&gt; STATE
-STATE seq=0 mode=UNCAL online=7 cal=0 torque=0 err=0 age=0 ...
-&gt; TORQUE 3 OFF
-OK torque=off
-&gt; CAL REF 3 0
-OK cal_ref
-&gt; CAL DIR 3 +1
-OK cal_dir
-&gt; CAL MARK 3 MIN
-OK cal_min
-&gt; CAL MARK 3 MAX
-OK cal_max
-&gt; CAL SAVE
-OK cal_saved
-&gt; TORQUE all ON
-OK torque=on
-&gt; POSE seq=1 q=10.0,0.0,-5.0 speed=10 acc=20
-# POSE 不逐帧 ACK；看 STATE 的 mode 和 seq</code></pre>
-      <p class="sub" style="margin:6px 0 0"><code>speed</code> 是度/秒（1..52），<code>acc</code> 是舵机加速度寄存器（0..254）；<code>CAL</code> 模式下 <code>POSE</code> 和 <code>TORQUE ON</code> 会被拒绝，必须 <code>CAL SAVE</code> 或 <code>CAL CLEAR</code> 退出 <code>CAL</code>。</p>
+      <p class="sub" style="margin:10px 0 0"><code>speed</code> 是度/秒（1..52），<code>acc</code> 是舵机加速度寄存器（0..254）；<code>CAL</code> 模式下 <code>POSE</code> 和 <code>TORQUE ON</code> 会被拒绝，必须 <code>CAL SAVE</code> 或 <code>CAL CLEAR</code> 退出 <code>CAL</code>。</p>
       <h4 style="margin:16px 0 6px">LT100P/1 命令</h4>
       <table>
         <tr><th>命令</th><th>作用</th></tr>
         <tr><td><code>HELLO</code></td><td>协议/固件/功能位</td></tr>
         <tr><td><code>STATE</code></td><td>模式、在线/标定/扭矩位、q/raw/load/cur/v/t、err、age</td></tr>
         <tr><td><code>STREAM ON\|OFF</code></td><td>10Hz 周期 STATE；默认关闭</td></tr>
-        <tr><td><code>TORQUE &lt;id\|all&gt; ON\|OFF</code></td><td>开关输出力矩；OFF 用于手移标定</td></tr>
+        <tr><td><code>TORQUE &lt;id\|all&gt; ON\|OFF</code></td><td>开关输出力矩；OFF 用于手移标定；ON 要求该关节在标定行程内</td></tr>
         <tr><td><code>CAL REF &lt;id&gt; &lt;q&gt;</code></td><td>当前姿态记为模型角 q（度）</td></tr>
         <tr><td><code>CAL DIR &lt;id&gt; +1\|-1</code></td><td>raw 增大时 q 的方向</td></tr>
-        <tr><td><code>CAL MARK &lt;id&gt; MIN\|MAX</code></td><td>当前 raw 记为端点</td></tr>
+        <tr><td><code>CAL MARK &lt;id&gt; MIN\|MAX</code></td><td>当前 raw 记为端点；两端顺序随意，固件取含参考姿态的弧为行程；跨 0 会被拒绝</td></tr>
         <tr><td><code>CAL SAVE</code> / <code>CAL CLEAR &lt;id\|all&gt;</code></td><td>保存到 NVS / 清除标定</td></tr>
         <tr><td><code>LIMITS</code></td><td>每关节 raw 端点与 safe 区间</td></tr>
         <tr><td><code>POSE seq=&lt;n&gt; q=&lt;q1,q2,q3&gt; speed=&lt;deg/s&gt; acc=&lt;0..254&gt;</code></td><td>三关节目标；最新覆盖，不逐帧 ACK</td></tr>
-        <tr><td><code>STOP</code> / <code>ESTOP</code> / <code>CLEAR</code></td><td>保持最后目标 / 锁存急停 / 清除故障</td></tr>
+        <tr><td><code>STOP</code> / <code>ESTOP</code> / <code>CLEAR</code></td><td>原地停住 / 锁存急停并原地停住 / 清除故障</td></tr>
       </table>
-      <p class="sub" style="margin:8px 0 0">错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>05</code> 行太长 · <code>06</code> 舵机离线 · <code>07</code> 无 ACK · <code>08</code> 端点太近/顺序不成立 · <code>09</code> 未标定 · <code>10</code> 超出安全区 · <code>11</code> 模式不允许 · <code>14</code> 存储失败 · <code>17</code> 失联。</p>
+      <p class="sub" style="margin:8px 0 0">错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>05</code> 行太长 · <code>06</code> 舵机离线 · <code>07</code> 无 ACK · <code>08</code> 端点非法（两端太近、参考姿态离端点不足 40 tick，或行程跨 0） · <code>09</code> 未标定 · <code>10</code> 超出安全区 · <code>11</code> 模式不允许 · <code>14</code> 存储失败 · <code>17</code> 失联。</p>
       <p class="res"><a href="../examples/09_servo_basic/09_servo_basic.ino">examples\09_servo_basic\09_servo_basic.ino</a> · <a href="../docs/teach/servo-basic.md">docs\teach\servo-basic.md</a> · <a href="../docs/design/common-platform.md">公版设计</a> · <a href="../docs/reference/servo/st-3215-c018-datasheet.pdf">ST3215 数据手册</a></p>
     </div>
 
@@ -1414,14 +1528,14 @@ J3 ---- 12.0V</code></pre>
 
     <div class="box" style="margin-top:12px">
       <h3>本机实测与排错</h3>
-      <p>09 编译：351,573 B / 26% flash，25,800 B / 7% RAM；公版 host 测试全过，网页 mock 标定流程通过。真实三关节标定/运动<b>还没验证</b>（当前只接 ID1）。</p>
+      <p>09 编译：353,981 B / 27% flash，25,800 B / 7% RAM；公版 host 测试全过，网页协议测试 8/8。实板 3/3 在线（12.3V），三关节标定与真实运动还在验证中。</p>
       <p class="sub" style="margin:6px 0 0"><b>不要把编译通过、host 测试或 mock 当成机械动作已验证。</b>接好 12V、确认 <code>3/3 online</code> 后，再按上面的步骤做第一次标定和低速端点测试。</p>
       <table>
         <tr><th>现象</th><td>先检查</td></tr>
         <tr><td><code>STATE</code> 显示 <code>online=1</code> / 只有一只在线</td><td>12V 5A 是否打开；3P 线是否插好；ID 是否真是 1/2/3；USB 只给逻辑，不给舵机</td></tr>
         <tr><td>只掉一只</td><td>那一只的 3P 线/ID；总线是串联的，前一只没接好会影响后面</td></tr>
         <tr><td><code>ERR 06</code></td><td>该 ID 当前不在线；先看 <code>STATE</code>，查 12V 和线</td></tr>
-        <tr><td><code>ERR 08</code></td><td>端点太近、顺序不成立，或参考点不在 safe 内；重新标定两个 raw 端点</td></tr>
+        <tr><td><code>ERR 08</code></td><td>两端相距不足 80 tick、参考姿态离端点不足 40 tick，或行程跨 0 还没选保留段；跨 0 用 <code>CAL SPLIT</code> 保留含 Z 的一段</td></tr>
         <tr><td><code>ERR 09</code></td><td>未标定；先做 <code>CAL REF/DIR/MARK</code>，再 <code>CAL SAVE</code></td></tr>
         <tr><td><code>ERR 10</code></td><td>目标不在 safe 区间；用 <code>LIMITS</code> 看范围，别硬闯</td></tr>
         <tr><td><code>ERR 11</code></td><td>模式不允许：<code>CAL</code> 下不能 POSE/TORQUE ON；先 <code>CAL SAVE</code> 或 <code>CAL CLEAR</code></td></tr>
