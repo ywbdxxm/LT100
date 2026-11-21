@@ -544,7 +544,7 @@
       if (isFile) {
         message = '不要直接双击 HTML：Web Serial 需要 localhost 或 HTTPS。请双击 start-web-console.bat，或把页面放到 HTTPS 上。';
       } else if (!secure) {
-        message = '当前页面不是安全上下文。请用 http://127.0.0.1:8770/serial.html 或 HTTPS 打开。';
+        message = '当前页面不是安全上下文。请用 http://127.0.0.1:8773/web/serial.html 或 HTTPS 打开。';
       }
       if (!supportsSerial) {
         message += (message ? ' ' : '') + '这个浏览器不支持 Web Serial；请用 Chrome / Edge 89+，或 Firefox 151+；Safari 不支持。';

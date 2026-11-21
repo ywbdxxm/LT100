@@ -19,10 +19,13 @@
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const mock = new URLSearchParams(location.search).has('mock');
+  const bridgeUrl = 'ws://127.0.0.1:8771/serial';
   const supportsSerial = !!navigator.serial;
   const secure = window.isSecureContext;
   const isFile = location.protocol === 'file:';
-  const canUse = mock || (supportsSerial && secure && !isFile);
+  // A local WebSocket bridge works without Web Serial; localhost is still
+  // required because the bridge only listens on 127.0.0.1.
+  const canUse = mock || (secure && !isFile);
 
   const blank = () => ({
     online: false, pos: null, volt: null, temp: null, load: null,
@@ -33,6 +36,7 @@
 
   let selected = 1;
   let port = null;
+  let bridge = null;
   let writer = null;
   let reader = null;
   let connected = false;
@@ -111,10 +115,10 @@
       safe = `安全区：${j.safeMin}..${j.safeMax}（raw ${j.min}..${j.max}）`;
       $(`j${id}safe`).className = 'joint-safe cal';
     } else if (j.min !== null) {
-      safe = '安全区：只标了下限，还缺上限';
+      safe = `已标 MIN ${j.min}，还缺 MAX（raw 更大的端点）`;
       $(`j${id}safe`).className = 'joint-safe';
     } else if (j.max !== null) {
-      safe = '安全区：只标了上限，还缺下限';
+      safe = `已标 MAX ${j.max}，还缺 MIN（raw 更小的端点）`;
       $(`j${id}safe`).className = 'joint-safe';
     } else {
       $(`j${id}safe`).className = 'joint-safe';
@@ -195,7 +199,7 @@
       }
     } else {
       ui.safeLine.className = 'safe-line';
-      ui.safeLine.textContent = j.online ? '未标定：先记录 MIN / MAX，MOVE 会被拒绝' : '离线：接 12V / 3P 线后刷新';
+      ui.safeLine.textContent = j.online ? '未标定：先记录 raw 较小（MIN）和较大（MAX）的端点，MOVE 会被拒绝' : '离线：接 12V / 3P 线后刷新';
       ui.target.removeAttribute('min');
       ui.target.removeAttribute('max');
       ui.target.value = '';
@@ -276,21 +280,42 @@
     }
   }
 
+  let renderTimer = null;
+  let quietRender = false;
+  let quietSerial = false;
+
+  function scheduleRender() {
+    if (quietRender || renderTimer) return;
+    renderTimer = setTimeout(() => {
+      renderTimer = null;
+      render();
+    }, 16);
+  }
+
   function handleLine(raw) {
     const line = raw.trim();
     if (!line) return;
     const quietPoll = polling && /^ID\d+ pos=/.test(line);
-    if (!quietPoll) appendLog('rx', line);
+    if (!quietSerial && !quietPoll) appendLog('rx', line);
     parseLine(line);
     resolvePending(line);
-    render();
+    scheduleRender();
+  }
+
+  // Keep the reader draining: process complete lines in a later task, and
+  // coalesce DOM updates so a burst (SCAN/LIMITS) cannot overrun Web Serial.
+  let rxTimer = null;
+
+  function processLines() {
+    rxTimer = null;
+    const parts = lineBuf.split('\n');
+    lineBuf = parts.pop();
+    for (const part of parts) handleLine(part.replace(/\r$/, ''));
   }
 
   function onChunk(value) {
     lineBuf += decoder.decode(value, { stream: true });
-    const parts = lineBuf.split('\n');
-    lineBuf = parts.pop();
-    for (const part of parts) handleLine(part.replace(/\r$/, ''));
+    if (!rxTimer) rxTimer = setTimeout(processLines, 0);
   }
 
   async function sendAndWait(cmd, re, timeout = 4500) {
@@ -330,16 +355,25 @@
 
   async function refreshAll() {
     if (!connected) return;
-    for (const id of [1, 2, 3]) joints[id].online = false;
-    await sendAndWait('SCAN', /^SCAN done:|^ERR/, 5000);
-    for (const id of [1, 2, 3]) {
-      joints[id].min = null;
-      joints[id].max = null;
-      joints[id].safeMin = null;
-      joints[id].safeMax = null;
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      renderTimer = null;
     }
-    await sendAndWait('LIMITS', /^OK limits$|^ERR/, 2000);
-    render();
+    quietRender = true;
+    try {
+      for (const id of [1, 2, 3]) joints[id].online = false;
+      await sendAndWait('SCAN', /^SCAN done:|^ERR/, 5000);
+      for (const id of [1, 2, 3]) {
+        joints[id].min = null;
+        joints[id].max = null;
+        joints[id].safeMin = null;
+        joints[id].safeMax = null;
+      }
+      await sendAndWait('LIMITS', /^OK limits$|^ERR/, 2000);
+    } finally {
+      quietRender = false;
+      render();
+    }
   }
 
   async function run(fn) {
@@ -382,6 +416,8 @@
     }
   }
 
+  let readFailed = false;
+
   async function readLoop() {
     reader = port.readable.getReader();
     try {
@@ -391,11 +427,79 @@
         if (value) onChunk(value);
       }
     } catch (err) {
-      if (!tearingDown) appendLog('err', `读取中断：${err && err.message ? err.message : err}`);
+      if (!tearingDown) {
+        readFailed = true;
+        appendLog('err', `读取中断：${err && err.message ? err.message : err}`);
+        if (pending) {
+          const p = pending;
+          pending = null;
+          clearTimeout(p.timer);
+          p.reject(new Error('读取中断'));
+        }
+      }
     } finally {
       try { reader.releaseLock(); } catch {}
       reader = null;
     }
+  }
+
+  function connectBridge() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const ws = new WebSocket(bridgeUrl);
+      ws.binaryType = 'arraybuffer';
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch {}
+        reject(new Error('连接超时'));
+      }, 1500);
+
+      ws.onopen = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        bridge = ws;
+        port = null;
+        reader = null;
+        writer = {
+          async write(bytes) {
+            if (ws.readyState !== WebSocket.OPEN) throw new Error('串口桥已断开');
+            ws.send(decoder.decode(bytes));
+          },
+          releaseLock() {},
+        };
+        connected = true;
+        setConnState('已连接', 'ok');
+        setPortInfo('本机串口桥 / CP210x');
+        appendLog('sys', '串口桥已连接；舵机总线由本机服务转发');
+        resolve();
+      };
+      ws.onmessage = (event) => {
+        const text = typeof event.data === 'string'
+          ? event.data
+          : decoder.decode(new Uint8Array(event.data));
+        onChunk(encoder.encode(text));
+      };
+      ws.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { ws.close(); } catch {}
+        reject(new Error('串口桥未启动'));
+      };
+      ws.onclose = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(new Error('串口桥未启动'));
+          return;
+        }
+        if (tearingDown || !connected) return;
+        appendLog('err', '串口桥连接断开');
+        teardown().then(() => { updateButtons(); render(); });
+      };
+    });
   }
 
   async function connect() {
@@ -403,22 +507,78 @@
     busy = true;
     updateButtons();
     try {
-      port = mock ? createMockPort() : await navigator.serial.requestPort();
-      await port.open({ baudRate: 115200 });
-      lineBuf = '';
-      writer = port.writable.getWriter();
-      connected = true;
-      setConnState('已连接', 'ok');
-      setPortInfo(mock ? '模拟端口（不连硬件）' : 'CP210x / Web Serial');
-      appendLog('sys', mock ? '模拟端口已连接；不会驱动真实舵机' : '串口已连接；打开串口可能让板子复位一次');
-      readLoop();
-      await sleep(mock ? 80 : 900);
-      await refreshAll();
-      if (ui.liveRead.checked) startPolling();
+      if (!mock) {
+        quietSerial = true;
+        quietRender = true;
+        lineBuf = '';
+        try {
+          await connectBridge();
+        } catch (err) {
+          quietSerial = false;
+          quietRender = false;
+          appendLog('sys', `本机串口桥不可用：${err && err.message ? err.message : err}；尝试 Web Serial`);
+          await teardown();
+        }
+        if (connected) {
+          try {
+            await sleep(250);
+            if (!connected) throw new Error('串口桥连接断开');
+            await refreshAll();
+            quietSerial = false;
+            quietRender = false;
+            appendLog('sys', '串口桥就绪：启动信息已忽略');
+            if (ui.liveRead.checked) startPolling();
+          } catch (err) {
+            quietSerial = false;
+            quietRender = false;
+            appendLog('err', `连接失败：${err && err.message ? err.message : err}`);
+            await teardown();
+          }
+          return;
+        }
+      }
+      const serialPort = mock ? createMockPort() : await navigator.serial.requestPort();
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          port = serialPort;
+          readFailed = false;
+          // Web Serial's default input buffer is only 255 B; a SCAN/LIMITS burst
+          // can overrun it while Chrome renders. Keep a larger receive buffer.
+          await port.open({ baudRate: 115200, bufferSize: 8192 });
+          lineBuf = '';
+          writer = port.writable.getWriter();
+          connected = true;
+          setConnState('已连接', 'ok');
+          setPortInfo(mock ? '模拟端口（不连硬件）' : 'CP210x / Web Serial');
+          appendLog('sys', mock ? '模拟端口已连接；不会驱动真实舵机' : `串口已连接（第 ${attempt} 次）；打开串口可能让板子复位一次`);
+          quietSerial = true;
+          quietRender = true;
+          readLoop();
+          await sleep(mock ? 80 : 2500);
+          if (readFailed) throw new Error('读取中断');
+          await refreshAll();
+          quietSerial = false;
+          quietRender = false;
+          appendLog('sys', '串口就绪：启动信息已忽略');
+          if (ui.liveRead.checked) startPolling();
+          return;
+        } catch (err) {
+          quietSerial = false;
+          quietRender = false;
+          appendLog('err', `连接失败${attempt < 2 ? '，正在重连' : ''}：${err && err.message ? err.message : err}`);
+          await teardown();
+          if (attempt < 2) await sleep(500);
+          else throw err;
+        }
+      }
     } catch (err) {
+      quietSerial = false;
+      quietRender = false;
       appendLog('err', `连接失败：${err && err.message ? err.message : err}`);
       await teardown();
     } finally {
+      quietSerial = false;
+      quietRender = false;
       busy = false;
       updateButtons();
       render();
@@ -432,6 +592,8 @@
       clearTimeout(pending.timer);
       pending = null;
     }
+    try { if (bridge) bridge.close(); } catch {}
+    bridge = null;
     try { if (reader) await reader.cancel(); } catch {}
     try { if (reader) reader.releaseLock(); } catch {}
     reader = null;
@@ -473,6 +635,15 @@
   async function actionMark(kind) {
     if (!torqueOff[selected]) {
       appendLog('err', '先卸力，再标记端点');
+      return;
+    }
+    const j = joints[selected];
+    if (kind === 'MIN' && j.max !== null && j.pos !== null && j.pos > j.max) {
+      appendLog('err', `当前 raw ${j.pos} 比已标 MAX ${j.max} 大；MIN 应是较小的端点。先 CLEAR 再重标。`);
+      return;
+    }
+    if (kind === 'MAX' && j.min !== null && j.pos !== null && j.pos < j.min) {
+      appendLog('err', `当前 raw ${j.pos} 比已标 MIN ${j.min} 小；MAX 应是较大的端点。先 CLEAR 再重标；若行程跨 0/4095，不能简单交换。`);
       return;
     }
     await run(async () => {
@@ -664,11 +835,11 @@
   window.addEventListener('pagehide', () => { teardown(); });
 
   if (!canUse) {
-    showNotice(ui.support, '此浏览器不支持 Web Serial，或页面不是从 localhost/HTTPS 打开。请用 Chrome / Edge 89+（或 Firefox 151+），从 start-servo-console.bat 启动。');
+    showNotice(ui.support, '页面必须从 localhost 打开（双击 start-servo-console.bat）。连接优先走本机串口桥；桥不可用时才回退 Web Serial。');
   } else if (mock) {
     showNotice(ui.hint, '模拟模式：界面和命令流可以测试，但不会连接真实舵机。地址加 ?mock=1 可复现。');
   } else {
-    showNotice(ui.hint, '第一次连接先确认 12V 5A 已打开，再点「刷新」；TORQUE OFF 前必须扶住手臂。');
+    showNotice(ui.hint, `第一次连接先确认 12V 5A 已打开；连接会自动使用本机串口桥${supportsSerial ? '，桥不可用时回退 Web Serial' : ''}。TORQUE OFF 前必须扶住手臂。`);
   }
   render();
 })();

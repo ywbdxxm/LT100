@@ -15,6 +15,7 @@ ESP32 UART1：GPIO18=RX，GPIO19=TX，1Mbps ── 板载收发器 ── DATA
 - 舵机是 **12V**，USB-C 只给 ESP32、OLED 和逻辑供电，**不给舵机**。
 - **读取、标定、MOVE 全程 12V 5A 必须接好并打开**；`TORQUE OFF` 只关输出力矩，不给舵机断电。12V 关着时舵机不响应，`SCAN` 会是 `0/3`，无法 `MARK`。
 - 主控板两个 3P 口内部并联，三只舵机串在同一条总线上，接哪个口都行。
+- ST3215 本体的两个 5264-3P 口也**内部并联，没有输入/输出之分**：一个口接上一级，另一个口接下一只即可。
 - 三只舵机 ID 设为 **1 / 2 / 3**，统一 **1Mbps**；ID 不能重复。新舵机用厂商 Web UI 或 URT-2 改 ID；09 例程只扫描 1..3（`SCAN_MAX`），ID 不是这三个就不会出现在扫描结果里。
 - LT100 是 **3R 平面臂**：肩/肘/腕三轴平行、在同一竖直平面内；标定和限位只涉及这个平面，没有偏航/滚转，也没有空间姿态。
 - **断电插拔 3P 线**；带电热插拔可能烧总线或舵机。
@@ -68,18 +69,21 @@ ESP32 不直接发 PWM，而是发一条“去某个位置”的总线命令；�
 
 **软件限位不能替代机械硬限位。**
 
+> **当前结构没有机械硬限位**：软件标定出来的限位是唯一保护；标定后要做低速端点验证，标定错/未标定就动会直接撞结构。加硬限位是学生改进项目，不是现状。
+
 ### 4.2 标定步骤
 
 以腕关节 ID3 为例，手臂必须有人扶住：
 
 ```text
 TORQUE 3 OFF
-慢慢把关节移到安全下限 → MARK 3 MIN
-慢慢把关节移到安全上限 → MARK 3 MAX
+慢慢把关节移到 raw 较小的安全端点 → MARK 3 MIN
+慢慢把关节移到 raw 较大的安全端点 → MARK 3 MAX
 TORQUE 3 ON
 LIMITS
 ```
 
+- **`MIN` / `MAX` 是编码器 raw 刻度，不是机械上的“下 / 上”。** 固件要求 `MIN < MAX`；如果数值变大的方向正好和手臂向上相反，按 raw 数值记，不要按机械方向记。方向反了先 `CLEAR <id>` 重标。
 - 标定全程 **12V 5A 必须接好并打开**；`TORQUE OFF` 只关输出力矩，不给舵机断电，舵机仍能回位置。12V 关着时 `SCAN` 会是 `0/3`，手能推动但读不到位置，无法 `MARK`。
 - `TORQUE OFF` 后关节会卸力，**手臂可能掉下来**；先扶住，先做腕，再做肘，最后做肩。
 - 标定的是“安全端点”，不是机械硬限位的撞死点；端点之间还要留 `LIMIT_MARGIN=40` 格（约 3.5°）余量。
@@ -197,12 +201,15 @@ SERVO 3/3 CAL
 
 不想记命令时，用网页：
 
-- 双击 `start-servo-console.bat`，或从主页舵机章节打开 `web/servo.html`。
-- 连接 CP210x 串口后，页面自动发 `SCAN` + `LIMITS`；关节卡片显示在线、位置、电压、温度和 safe 区间。
+- 双击 `start-servo-console.bat`。它会先启动本机串口桥（用 .NET `SerialPort` 打开 CP210x，经 `ws://127.0.0.1:8771/serial` 转发），再打开页面。
+- 页面优先连本机桥，不会弹 Web Serial 的端口选择；桥不可用时才回退 Web Serial。
+- 桥在启动时打开串口，板子只复位一次；页面断开/重连时桥保持串口，不会反复复位，也不会出现 Web Serial 的 `BufferOverrunError`。
+- 运行标定台时串口被桥占用；Arduino IDE 的串口监视器要先关掉，烧录前也要先关标定台。桥只监听 `127.0.0.1`，页面必须从 localhost 打开。
+- 连接后页面自动发 `SCAN` + `LIMITS`；关节卡片显示在线、位置、电压、温度和 safe 区间。
 - 按「卸力 → MARK MIN → MARK MAX → TORQUE ON」点按钮；每次操作后页面自动刷新。
 - 在 safe 区间内填目标，发 `MOVE`；不会自动回位。
-- `?mock=1` 是模拟模式，只验证界面和命令流，不连硬件；真实 Web Serial 的端口选择必须由人点。
-- 需要 Chrome / Edge 89+（或 Firefox 151+）；Safari 不支持，页面必须从 localhost/HTTPS 打开。
+- `?mock=1` 是模拟模式，只验证界面和命令流，不连硬件。
+- 桥不可用时回退 Web Serial，需要 Chrome / Edge 89+（或 Firefox 151+）；Safari 只能用桥。
 
 ## 7. 反馈字段
 
@@ -217,18 +224,19 @@ SERVO 3/3 CAL
 
 ## 8. 构建与实测
 
-- 编译：`341989 B / 26% flash`，`25664 B / 7% RAM`，`esp32:esp32:esp32`。
+- 编译：`341993 B / 26% flash`，`25664 B / 7% RAM`，`esp32:esp32:esp32`。
 - 上传：串口写入后 `Hash of data verified`。
-- 命令路径实测：
-  - `SCAN` 回 `0/3 online`（本次舵机没有响应；先查 12V/3P 线）；
-  - `LIMITS` 三个 `UNSET`；
-  - `MOVE` 回 `ERR 09`；
-  - 用临时 NVS 种子写入 ID1 `1000..2000` 后，`MOVE 1 2048` 被 `ERR 10` 拒绝，`MOVE 1 1500` 通过限位检查后因舵机离线回 `ERR 06`；
-  - 测试后用 `CLEAR 1` 清除，未留下测试限位。
+- 命令路径实测（2026-11-21，只接 ID1）：
+  - `SCAN` 回 `ID1 pos=3842 v=12.3V t=39C load=0`、`ID2/ID3 offline`、`1/3 online`；
+  - `LIMITS` 显示 ID1 `min=3508`、MAX 未标定；ID2/ID3 `UNSET`；
+  - `MOVE` 未标定时回 `ERR 09`；
+  - 早期用临时 NVS 种子写入 ID1 `1000..2000` 后，`MOVE 1 2048` 被 `ERR 10` 拒绝，`MOVE 1 1500` 通过限位检查后因舵机离线回 `ERR 06`；测试后用 `CLEAR 1` 清除。
 - 原始串口日志在 `.local/servo-basic-*.log` 与 `.local/servo-limits-*.log`。
-- 网页标定台用 `web/servo.html?mock=1` 实测完整流程：连接 3/3 → 卸力 → 模拟位置 1300 → MARK MIN → 模拟位置 2300 → MARK MAX → safe `1340..2260` → TORQUE ON → `MOVE 2000`，卡片位置更新为 2000。**这是 mock 界面/命令流测试，不是实机运动；真实 Web Serial 的端口选择需要人工点击，未自动化。**
+- 网页标定台实机连接（2026-11-21）：`start-servo-console.bat` 启动本机桥后，页面显示 `已连接` / `本机串口桥 / CP210x`，`SCAN` 回 `1/3 online`；断开、重连、切换页面后串口保持，板子没有因重连反复复位；桥日志无异常。原始记录在 `.local/servo-web-bridge-verification-*.log` 与 `.local/serial-bridge.log`。
+- 同一台机器上 Web Serial 路径仍可复现 `BufferOverrunError`；页面优先走本机桥，桥不可用时才回退 Web Serial。
+- 网页标定台用 `web/servo.html?mock=1` 实测完整流程：连接 3/3 → 卸力 → 模拟位置 1300 → MARK MIN → 模拟位置 2300 → MARK MAX → safe `1340..2260` → TORQUE ON → `MOVE 2000`，卡片位置更新为 2000。**这是 mock 界面/命令流测试，不是实机运动。**
 
-> 当前**没有验证实机转动和实机标定**：`SCAN` 是 `0/3`，舵机没有响应。接上 12V、确认 `3/3 online` 后，再按 §6.3 做第一次标定和 `MOVE`；不要把“编译通过/命令路径通过”当成“机械动作已验证”。
+> 当前**没有验证实机转动和实机标定**：ID1 在线，但 MAX 未标定，ID2/ID3 未接。接好 12V、确认在线后，再按 §6.3 做第一次标定和 `MOVE`；不要把“编译通过/命令路径通过”当成“机械动作已验证”。
 
 > `0/3` 不是“命令没发出去”，而是总线读回如实报告离线。先查 12V、3P 线和 ID，不要先怀疑库。
 
@@ -246,6 +254,8 @@ SERVO 3/3 CAL
 | `TORQUE OFF` 后臂掉 | 卸力就会掉；先扶住，先做腕 |
 | 方向反了 | 安装方向不同是正常的；限位仍用原始 MIN/MAX |
 | 12V 2A 掉压复位 | 换 12V 5A；不要让三只同时堵转 |
+| 网页串口总断 / `BufferOverrunError` | 用 `start-servo-console.bat` 启动本机桥；关掉 Arduino 串口监视器；不要用旧页面 |
+| 页面提示「本机串口桥不可用」 | 看 `.local/serial-bridge.log`；COM 是否被 IDE 占用、CP210x 是否存在；关掉占用后重开 .bat |
 
 ## 10. 下一步
 

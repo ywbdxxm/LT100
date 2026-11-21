@@ -1,12 +1,15 @@
 # LT100 browser console launcher
 # Serves LT100/ over http://127.0.0.1:<port>/ and opens web/<Page>.
 # Web Serial requires a secure context, so localhost is intentional.
+# With -Bridge, also starts the local WebSocket serial bridge (servo page).
 
 [CmdletBinding()]
 param(
-    [int]$Port = 8770,
+    [int]$Port = 8773,
     [string]$Page = 'serial.html',
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [switch]$Bridge,
+    [string]$ComPort
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,9 +33,22 @@ $contentTypes = @{
 
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
+$bridgeProc = $null
 
 try {
     $listener.Start()
+    if ($Bridge) {
+        $bridgeScript = Join-Path $PSScriptRoot 'serial-bridge.ps1'
+        $bridgeExe = (Get-Process -Id $PID).Path
+        $bridgeArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$bridgeScript`"")
+        if ($ComPort) { $bridgeArgs += @('-ComPort', $ComPort) }
+        try {
+            $bridgeProc = Start-Process -FilePath $bridgeExe -ArgumentList $bridgeArgs -PassThru -WindowStyle Hidden
+            Write-Host 'Serial bridge: ws://127.0.0.1:8771/serial (auto-detect CP210x)' -ForegroundColor DarkGray
+        } catch {
+            Write-Host "Serial bridge failed to start: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
     Write-Host "LT100 web console: $url" -ForegroundColor Green
     Write-Host 'Keep this window open. Press Ctrl+C to stop.' -ForegroundColor DarkGray
     if (-not $NoBrowser) {
@@ -80,6 +96,7 @@ try {
         }
     }
 } finally {
+    if ($bridgeProc) { Stop-Process -Id $bridgeProc.Id -Force -ErrorAction SilentlyContinue }
     try { $listener.Stop() } catch {}
     try { $listener.Close() } catch {}
 }

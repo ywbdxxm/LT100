@@ -261,7 +261,7 @@ USB-C ── 电脑（烧录/串口 115200）
 
 ### 5.4 串口 CLI
 
-命令表与固件要求只维护一份：[course-4h.md §4](../teach/course-4h.md#4-固件-cli教师预烧)。
+命令表与固件要求以 [common-platform.md](common-platform.md) 的 `LT100P/1` 为准；[course-4h.md §4](../teach/course-4h.md#4-固件-cli教师预烧) 只是课程级摘要，不再单独维护另一套命令。
 
 ### 5.5 引脚
 
@@ -329,6 +329,8 @@ USB-C ── 电脑（烧录/串口 115200）
 ## 7. 教学模块
 
 建议 8 个实验，每个 1.5–2 小时。
+
+> 交互应用清单、共用底座与微雪出厂固件复用判断见 [interactive-applications.md](interactive-applications.md)；公版协议/标定/安全/测试设计见 [common-platform.md](common-platform.md)；本文只保留课程级实验，不重复应用细节。
 
 > **只有 4 小时**：重点是 AI agent 写代码 → 走 [course-4h.md](../teach/course-4h.md)；
 > 重点是学生动手装配 → 走 [course-4h.md](../teach/course-4h.md)。本文的 8 个实验用于完整学期或课后扩展。

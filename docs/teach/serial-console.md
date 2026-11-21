@@ -136,7 +136,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 
 ```text
 双击 start-web-console.bat
-  → 打开 http://127.0.0.1:8770/web/serial.html
+  → 打开 http://127.0.0.1:8773/web/serial.html
   → 点「连接串口」
   → 在浏览器弹窗里选 CP210x 的 COM 口
 ```

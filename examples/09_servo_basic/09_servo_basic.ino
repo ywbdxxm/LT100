@@ -388,6 +388,7 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(1000000, SERIAL_8N1, SERVO_RX, SERVO_TX);
   bus.pSerial = &Serial1;
+  bus.IOTimeOut = 20;  // 1Mbps replies are sub-ms; don't block 100ms on absent IDs
   oled.begin();
   oled.setBusClock(400000);
   loadLimits();

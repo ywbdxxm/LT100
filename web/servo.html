@@ -88,12 +88,12 @@
           </div>
           <div class="step-row" data-step="3">
             <span class="step-num">3</span>
-            <div><b>记录下限</b><p>把关节慢慢移到安全下限，记录当前刻度。</p></div>
+            <div><b>记录 raw 较小的端点</b><p>移到刻度较小的一端，点 MARK MIN；不一定是机械下限。</p></div>
             <button class="btn tiny" id="markMinBtn" type="button" disabled>MARK MIN</button>
           </div>
           <div class="step-row" data-step="4">
             <span class="step-num">4</span>
-            <div><b>记录上限</b><p>再移到安全上限，记录当前刻度。</p></div>
+            <div><b>记录 raw 较大的端点</b><p>移到刻度较大的一端，点 MARK MAX；MIN 必须小于 MAX。</p></div>
             <button class="btn tiny" id="markMaxBtn" type="button" disabled>MARK MAX</button>
           </div>
           <div class="step-row" data-step="5">
@@ -103,8 +103,9 @@
           </div>
         </div>
         <p class="fine servo-live">
-          <label><input type="checkbox" id="liveRead"> 实时读当前关节（约 0.9s）</label>
+          <label><input type="checkbox" id="liveRead" checked> 实时读当前关节（约 0.9s，默认开）</label>
         </p>
+        <p class="fine">MIN / MAX 是编码器 raw 刻度，不是机械上下限；如果方向相反，先 <b>CLEAR</b>，再按“raw 较小 → MIN、raw 较大 → MAX”重标。行程跨过 0/4095 时不能简单交换，见 <a href="../docs/teach/servo-basic.md">servo-basic.md §4.3</a>。</p>
       </section>
 
       <section class="card">
@@ -154,13 +155,13 @@
     <h2>第一次用</h2>
     <ol class="plain">
       <li>板上烧录 <code>09_servo_basic</code>，12V 5A 接好<b>并打开</b>，USB-C 接电脑；手扶住手臂。</li>
-      <li>双击 <code>start-servo-console.bat</code>，或从主导航的「舵机」章节打开本页。</li>
-      <li>点「连接串口」，选 <b>Silicon Labs CP210x</b> 对应的 COM 口。</li>
+      <li>双击 <code>start-servo-console.bat</code>；它会同时启动本机串口桥并打开本页。</li>
+      <li>点「连接串口」；本机桥会自动打开 CP210x，不用手选 COM 口。桥不可用时才弹出 Web Serial 端口选择。</li>
       <li>先点「刷新」看 3/3 在线；0/3 先查 12V、3P 线和 ID，不要继续标定。</li>
-      <li>选腕（ID3）→ 扶住 →「卸力」→ 手移到下限 →「MARK MIN」→ 移到上限 →「MARK MAX」→「TORQUE ON」。</li>
+      <li>选腕（ID3）→ 扶住 →「卸力」→ 手移到 <b>raw 较小</b> 的一端 →「MARK MIN」→ 移到 <b>raw 较大</b> 的一端 →「MARK MAX」→「TORQUE ON」。MIN 不一定是机械下限。</li>
       <li>在 safe 区间内填一个目标，发 MOVE；用「刷新」或实时读数确认位置。</li>
     </ol>
-    <p class="fine">需要 Chrome / Edge 89+，或 Firefox 151+；Safari 不支持。页面必须从 localhost 打开；<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
+    <p class="fine">运行标定台时串口由本机桥占用；Arduino IDE 的串口监视器要先关掉，烧录前也要先关标定台。桥只监听 127.0.0.1，页面必须从 localhost 打开。连接优先走桥，桥不可用时才回退 Web Serial（Chrome / Edge 89+ 或 Firefox 151+）。<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
     <p class="fine">完整原理、命令表和错误码：<a href="../docs/teach/servo-basic.md">docs/teach/servo-basic.md</a>；固件：<a href="../examples/09_servo_basic/09_servo_basic.ino">09_servo_basic.ino</a>。</p>
   </section>
 </main>
