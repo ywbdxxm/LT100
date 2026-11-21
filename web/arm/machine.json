@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "id": "lt100",
+  "units": "mm",
+  "links": { "l1": 180, "l2": 180, "l3": 90 },
+  "base": { "shoulder_height": 80, "radius": 85, "yaw_deg": 0 },
+  "joints": [
+    { "id": 1, "role": "shoulder", "model_ref_q": 90 },
+    { "id": 2, "role": "elbow", "model_ref_q": 0 },
+    { "id": 3, "role": "wrist", "model_ref_q": 0 }
+  ],
+  "head": { "mount_deg": -90, "shade_radius": 50, "shade_depth": 65 },
+  "reference_pose": {
+    "description": "上臂竖直向上、肘伸直、灯头朝正前方",
+    "cal_q": [0, 0, 0]
+  },
+  "motion": { "speed_deg_s": 25, "acc": 20, "pose_hz": 20 }
+}
