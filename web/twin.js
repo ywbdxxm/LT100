@@ -19,7 +19,7 @@ const VIEWS = {
 };
 
 const DEFAULT_HINT =
-  "拖动灯头：按在灯罩上拖动；松手 / Esc / STOP 停止。实体=已发目标，冷色=实际。";
+  "拖动灯头或关节环；松手 / Esc / STOP 停止。实体=已发目标，冷色=实际。";
 
 const state = {
   machine: null,
@@ -120,12 +120,12 @@ function refresh() {
     hint = `连接失败：${state.connectError}`;
   } else if (state.phase === "disconnected") {
     hint = "串口桥断开，请点重试连接";
-  } else if (error) {
+  } else if (error && snapshot?.err !== 0) {
     hint = `固件 ERR ${error.code} ${error.msg}`;
   } else if (state.dragHint) {
     hint = state.dragHint;
   } else if (gate.ready) {
-    hint = "门禁通过 · 可拖动灯头（松手 STOP）";
+    hint = "门禁通过 · 拖灯头或关节环（松手 STOP）";
   } else if (snapshot) {
     hint = `门禁未通过（缺 ${gate.missing.length} 项）：${gate.missing[0]}`;
   }
@@ -134,6 +134,10 @@ function refresh() {
   const torqueAvailable = Boolean(
     snapshot && snapshot.online === 7 && calsOk && snapshot.torque !== 7
   );
+  const uiMissing = state.interaction?.isDragging()
+    ? gate.missing.filter((item) => !item.startsWith("mode=MOTION"))
+    : gate.missing;
+  const uiGate = { ready: uiMissing.length === 0, missing: uiMissing };
 
   state.ui.update({
     connection: state.connection,
@@ -141,7 +145,7 @@ function refresh() {
     target: state.target,
     actual: state.actual,
     ranges,
-    gate,
+    gate: uiGate,
     readout: snapshot
       ? readout(machine, state.target, state.actual)
       : { targetXy: "—", errorMm: "—", psi: "—" },
@@ -227,12 +231,27 @@ async function boot() {
     actual: () => [...state.actual],
     safe: () => state.ranges,
     snapshot: () => state.transport?.getState() ?? null,
+    lastError: () => state.transport?.getLastError() ?? null,
     lampScreen: () =>
       state.solid.getLampScreen(
         scene.camera,
         $("stage").clientWidth,
         $("stage").clientHeight
       ),
+    rings: () =>
+      state.solid.getRingScreens(
+        scene.camera,
+        $("stage").clientWidth,
+        $("stage").clientHeight
+      ),
+    planeScreen: (x, y) =>
+      state.solid.getPlaneScreen(
+        { x, y },
+        scene.camera,
+        $("stage").clientWidth,
+        $("stage").clientHeight
+      ),
+    activeRing: () => state.solid.getActiveRing(),
     marker: () => state.solid.isMarkerVisible(),
     clear() {
       this.poses.length = 0;

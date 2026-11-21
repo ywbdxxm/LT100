@@ -83,6 +83,13 @@ export function createUi({ onStop, onRetry, onTorque }) {
       row.append(dot, text);
       gateBox.append(row);
     }
+    if (!gate.ready) {
+      const link = document.createElement("a");
+      link.className = "gate-link";
+      link.href = "servo.html";
+      link.textContent = "打开 09 标定台 →";
+      gateBox.append(link);
+    }
   };
 
   const update = (view) => {

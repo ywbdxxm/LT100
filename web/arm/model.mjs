@@ -8,6 +8,9 @@ const BLACK = 0x1c1c1f;
 const SILVER = 0xc3c8cf;
 const GHOST = 0x8fd3ff;
 const PICK_RADIUS = 70;
+const RING_RADIUS = 24;
+const RING_TUBE = 2.5;
+const RING_Z = 13;
 
 const deg = (value) => (value * Math.PI) / 180;
 
@@ -254,6 +257,7 @@ function build(machine, materials, withBase) {
 
   let pickProxy = null;
   let marker = null;
+  const rings = [];
   if (withBase) {
     // Invisible pick sphere; getPickSphere() exposes its center/radius.
     pickProxy = new THREE.Mesh(
@@ -274,9 +278,20 @@ function build(machine, materials, withBase) {
     marker.visible = false;
     marker.renderOrder = 3;
     root.add(marker);
+
+    for (const group of [shoulder, elbow, wrist]) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(RING_RADIUS, RING_TUBE, 10, 48),
+        new THREE.MeshBasicMaterial({ color: SILVER })
+      );
+      ring.position.z = RING_Z;
+      ring.renderOrder = 4;
+      group.add(ring);
+      rings.push(ring);
+    }
   }
 
-  return { root, shoulder, elbow, wrist, shadeGroup, pickProxy, marker };
+  return { root, shoulder, elbow, wrist, shadeGroup, pickProxy, marker, rings };
 }
 
 function updateBeam(beam, machine, qModel) {
@@ -331,6 +346,27 @@ export function createRig(machine, options = {}) {
   }
 
   let pose = machine.joints.map((joint) => joint.model_ref_q);
+  let activeRing = null;
+  const project = (point, camera, width, height) => {
+    camera.updateMatrixWorld();
+    const v = new THREE.Vector3(point.x, point.y, point.z ?? 0).project(camera);
+    return {
+      x: (v.x * 0.5 + 0.5) * width,
+      y: (-v.y * 0.5 + 0.5) * height,
+    };
+  };
+  const getJointRings = () => {
+    body.root.updateMatrixWorld(true);
+    return body.rings.map((ring, index) => {
+      const center = new THREE.Vector3();
+      ring.getWorldPosition(center);
+      return {
+        index,
+        center: { x: center.x, y: center.y, z: center.z },
+        radius: RING_RADIUS,
+      };
+    });
+  };
   const setPose = (qModel) => {
     pose = [...qModel];
     body.shoulder.rotation.z = deg(qModel[0]);
@@ -358,14 +394,23 @@ export function createRig(machine, options = {}) {
         radius: PICK_RADIUS,
       };
     },
-    getLampScreen: (camera, width, height) => {
-      camera.updateMatrixWorld();
-      const point = getLampWorld().project(camera);
-      return {
-        x: (point.x * 0.5 + 0.5) * width,
-        y: (-point.y * 0.5 + 0.5) * height,
-      };
+    getLampScreen: (camera, width, height) =>
+      project(getLampWorld(), camera, width, height),
+    getJointRings,
+    getRingScreens: (camera, width, height) =>
+      getJointRings().map((ring) => ({
+        index: ring.index,
+        ...project(ring.center, camera, width, height),
+      })),
+    getPlaneScreen: (point, camera, width, height) =>
+      project({ x: point.x, y: point.y, z: 0 }, camera, width, height),
+    setRingActive: (index) => {
+      activeRing = index ?? null;
+      body.rings.forEach((ring, i) => {
+        ring.material.color.set(i === index ? ORANGE : SILVER);
+      });
     },
+    getActiveRing: () => activeRing,
     setMarker: (point) => {
       if (!body.marker) return;
       body.marker.visible = Boolean(point);

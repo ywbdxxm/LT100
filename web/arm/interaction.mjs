@@ -1,7 +1,13 @@
 // LT100 A1 interaction: lamp-head drag -> IK -> 20 Hz POSE / STOP.
 // Pure helpers are exported for node --test; the DOM part is created lazily
 // and never touched at module load.
-import { bisectSafeTarget, fk, ikHead, wrapDeltaDeg } from "./kinematics.mjs";
+import {
+  bisectSafeTarget,
+  clampJointDrag,
+  fk,
+  ikHead,
+  wrapDeltaDeg,
+} from "./kinematics.mjs";
 import { isSafeQ, toFwQ } from "./machine.mjs";
 
 const DEG_PER_TICK = 360 / 4096;
@@ -35,6 +41,22 @@ export function blockingGateItems(missing = [], localGapMs = 0) {
 // arrives after pointerdown may stop the new drag.
 export function isNewError(error, baseline) {
   return Boolean(error && error !== baseline);
+}
+
+// Ring drag: only the grabbed joint changes, clamped to the inset safe range.
+export function jointDragQ(machine, qStart, jointIndex, deltaDeg, safeRanges) {
+  if (!Number.isInteger(jointIndex) || jointIndex < 0 || jointIndex > 2) {
+    throw new Error("jointDragQ 需要 0..2 的 jointIndex");
+  }
+  const delta = wrapDeltaDeg(0, deltaDeg);
+  const { qModel, clamped } = clampJointDrag(
+    machine,
+    qStart,
+    jointIndex,
+    delta,
+    safeRanges
+  );
+  return { qModel, clamped };
 }
 
 // One-shot 350 ms alignment; a new drag cancels it via cancel().
@@ -180,6 +202,10 @@ export function createInteraction({
   let inset = ranges ? insetModelRanges(ranges) : null;
   let latest = { gate: null, actual: null, state: null, error: null };
   let dragging = false;
+  let mode = null;
+  let jointIndex = null;
+  let qStart = null;
+  let aStart = 0;
   let pointerId = null;
   let psiLock = 0;
   let sentQ = null;
@@ -198,6 +224,42 @@ export function createInteraction({
     x: cosYaw * point.x - sinYaw * point.z,
     y: point.y,
   });
+  const angleDeg = (point, center) =>
+    (Math.atan2(point.y - center.y, point.x - center.x) * 180) / Math.PI;
+  const planeCenter = (world) => {
+    camera.updateMatrixWorld();
+    const m = camera.matrixWorld.elements;
+    const cam = [m[12], m[13], m[14]];
+    const d = [world.x - cam[0], world.y - cam[1], world.z - cam[2]];
+    if (Math.abs(d[2]) < 1e-6) return toArm(world);
+    const t = -cam[2] / d[2];
+    return toArm({
+      x: cam[0] + t * d[0],
+      y: cam[1] + t * d[1],
+      z: 0,
+    });
+  };
+  const pickRing = (point) => {
+    let best = null;
+    for (const ring of rig.getJointRings()) {
+      // Hit distance uses the ring center as the user sees it (projected along
+      // the view to Z=0); the pivot center still drives the drag angle.
+      const hitCenter = planeCenter(ring.center);
+      const distance = Math.hypot(point.x - hitCenter.x, point.y - hitCenter.y);
+      if (
+        distance >= 10 &&
+        distance <= ring.radius + 10 &&
+        (!best || distance < best.distance)
+      ) {
+        best = {
+          index: ring.index,
+          center: toArm(ring.center),
+          distance,
+        };
+      }
+    }
+    return best;
+  };
 
   const stream = createPoseStream({
     sendPose: (seq, q) => {
@@ -244,17 +306,21 @@ export function createInteraction({
   const stopDrag = (reason) => {
     if (!dragging) return;
     dragging = false;
+    mode = null;
+    jointIndex = null;
+    qStart = null;
     pointerId = null;
     detach();
     controls.enabled = true;
     stream.stopNow();
     rig.setMarker(null);
+    rig.setRingActive(null);
     onStop?.(reason);
     scheduleAlign();
   };
 
   const onPointerDown = (event) => {
-    if (event.button !== 0 || dragging) return;
+    if (event.button !== 0 || dragging || !event.isPrimary) return;
     if (!latest.gate?.ready) {
       onStatus?.("门禁未通过，不能拖动");
       return;
@@ -268,13 +334,21 @@ export function createInteraction({
       onStatus?.("相机太侧切：请转到正视（侧视不可拖）");
       return;
     }
-    if (!hitsSphere(ray, rig.getPickSphere())) return;
+    const point = planeHit(ray, planeNormal);
+    if (!point) return;
+    const armPoint = toArm(point);
+    const ring = pickRing(armPoint);
+    if (!ring && !hitsSphere(ray, rig.getPickSphere())) return;
 
     dragging = true;
+    mode = ring ? "joint" : "lamp";
+    jointIndex = ring ? ring.index : null;
+    qStart = rig.getPose();
+    aStart = ring ? angleDeg(armPoint, ring.center) : 0;
     pointerId = event.pointerId;
     clearAlign();
     controls.enabled = false;
-    sentQ = rig.getPose();
+    sentQ = [...qStart];
     psiLock = fk(machine, sentQ).psi;
     lastValidLamp = fk(machine, sentQ).lamp;
     lastSeq = latest.state?.seq ?? null;
@@ -282,8 +356,11 @@ export function createInteraction({
     dragStartSeq = stream.seq;
     dragError = latest.error;
     rig.setMarker(null);
+    rig.setRingActive(jointIndex);
     stream.start(() => sentQ);
-    onStatus?.("拖动中：松手停止");
+    onStatus?.(
+      ring ? `拖动 J${ring.index + 1}：松手停止` : "拖动中：松手停止"
+    );
     onTarget?.([...sentQ]);
     event.preventDefault();
 
@@ -314,6 +391,27 @@ export function createInteraction({
     const point = planeHit(ray, planeNormal);
     if (!point) return;
     const lamp = toArm(point);
+
+    if (mode === "joint") {
+      const ring = rig.getJointRings()[jointIndex];
+      if (!ring) return;
+      const center = toArm(ring.center);
+      const aNow = angleDeg(lamp, center);
+      const result = jointDragQ(
+        machine,
+        qStart,
+        jointIndex,
+        wrapDeltaDeg(aStart, aNow),
+        inset
+      );
+      const stepped = limitPoseStep(sentQ, result.qModel);
+      if (!isSafeQ(stepped, inset)) return;
+      sentQ = stepped;
+      rig.setRingActive(jointIndex);
+      onTarget?.([...sentQ]);
+      if (result.clamped) onStatus?.(`J${jointIndex + 1} 到限位`);
+      return;
+    }
 
     const reach =
       machine.links.l1 + machine.links.l2 + machine.links.l3;

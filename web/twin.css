@@ -98,6 +98,7 @@ body {
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
 }
 
 .panel {
@@ -124,6 +125,18 @@ body {
 .line b {
   font: 12px/1.45 ui-monospace, Consolas, monospace;
   font-weight: 500;
+}
+
+.gate-link {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--orange);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.gate-link:hover {
+  text-decoration: underline;
 }
 
 .hud {

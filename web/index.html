@@ -8,7 +8,7 @@
 <meta name="color-scheme" content="light">
 <meta name="theme-color" content="#faf8f5">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23b23c07'/%3E%3Ccircle cx='16' cy='12' r='5' fill='%23fff'/%3E%3Crect x='10' y='20' width='12' height='3' rx='1.5' fill='%23fff'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -30,9 +30,17 @@
 
   <section id="apps" aria-labelledby="apps-title">
     <h2 id="apps-title"><span class="n">应用</span>按固件选入口</h2>
-    <p class="sub">每套固件对应一个独立页面。先确认板子上烧的是哪套，再点进去；两套固件互斥，不会同时工作。</p>
+    <p class="sub">08/09 两套固件；A1 数字孪生跑在 09 上，需先标定并上力。先确认板子上烧的是哪套，再点进去。</p>
 
     <div class="apps-grid">
+      <a class="app-card app-a1" href="twin.html">
+        <span class="app-meta"><span class="app-fw">09 固件</span><span class="app-status">主应用</span></span>
+        <span class="app-title">A1 3D 数字孪生</span>
+        <span class="app-desc">拖 3D 灯头改位置，抓肩/肘/腕关节环改单个关节，实机跟随。需三关节已标定并上力。</span>
+        <span class="app-facts"><span>拖灯头 / 关节环</span><span>需三关节已标定</span><span>需先上力</span></span>
+        <span class="app-go">打开 3D 数字孪生 <span aria-hidden="true">→</span></span>
+      </a>
+
       <a class="app-card app-08" href="serial.html">
         <span class="app-meta"><span class="app-fw">08 固件</span><span class="app-status">可用</span></span>
         <span class="app-title">串口控制台</span>
@@ -49,6 +57,8 @@
         <span class="app-go">打开 09 标定台 <span aria-hidden="true">→</span></span>
       </a>
     </div>
+
+    <p class="apps-note"><b>A1 首次使用：</b>先去 <a href="servo.html">09 标定台</a> 完成三关节标定并上力，再回 3D 数字孪生拖动。</p>
 
     <p class="apps-note"><b>不确定烧的是哪套？</b>看 OLED：08 显示 <code>M:模式</code> 和灯状态；09 显示 <code>UNCAL</code> / <code>READY</code> 和三关节 raw。也可以在串口发 <code>HELP</code>（08 有命令表）或 <code>HELLO</code>（09 回协议版本）。</p>
   </section>
@@ -357,6 +367,8 @@
                 <li><span class="file">servo.css</span><span class="what">标定台布局与关节卡片</span></li>
                 <li><span class="file">servo.js</span><span class="what">LT100P/1 标定流程、检测、mock 模式</span></li>
                 <li><span class="file">lt100-protocol.mjs</span><span class="what">纯协议解析 / raw↔q / 命令构造（可 node --test）</span></li>
+                <li><span class="file">twin.html</span><span class="what">A1 3D 数字孪生：拖灯头/关节环，实机跟随（09 固件）</span></li>
+                <li><span class="dir">arm/</span><span class="what">孪生运动学、场景、交互与传输模块</span></li>
                 <li><span class="dir">assets/</span>
                   <ul>
                     <li><span class="file">board-*.jpg</span><span class="what">官网产品图，本页配图</span></li>

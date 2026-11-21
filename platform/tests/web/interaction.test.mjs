@@ -8,6 +8,7 @@ import {
   createPoseStream,
   insetModelRanges,
   isNewError,
+  jointDragQ,
   limitPoseStep,
 } from "../../../web/arm/interaction.mjs";
 import { safeModelRanges, toFwQ } from "../../../web/arm/machine.mjs";
@@ -80,6 +81,37 @@ test("isNewError：拖动前旧 ERR 不拦，拖动中新 ERR 才停", () => {
   assert.equal(isNewError(null, old), false);
   assert.equal(isNewError(null, null), false);
   assert.equal(isNewError(old, null), true);
+});
+
+test("jointDragQ：只改目标关节、两端夹住、其它关节不变", () => {
+  const start = [90, 0, 0];
+  const moved = jointDragQ(machine, start, 1, 10, RANGES);
+  assert.deepEqual(moved.qModel, [90, 10, 0]);
+  assert.equal(moved.clamped, false);
+
+  const lo = jointDragQ(machine, start, 0, -100, RANGES);
+  assert.equal(lo.qModel[0], RANGES[0].min);
+  assert.equal(lo.clamped, true);
+  assert.equal(lo.qModel[1], 0);
+  assert.equal(lo.qModel[2], 0);
+
+  const hi = jointDragQ(machine, start, 2, 100, RANGES);
+  assert.equal(hi.qModel[2], RANGES[2].max);
+  assert.equal(hi.clamped, true);
+  assert.equal(hi.qModel[0], 90);
+  assert.equal(hi.qModel[1], 0);
+});
+
+test("jointDragQ：跨 ±180 取最短差，不绕远路", () => {
+  const wide = [
+    { min: -1000, max: 1000 },
+    { min: -1000, max: 1000 },
+    { min: -1000, max: 1000 },
+  ];
+  const start = [179, 0, 0];
+  assert.deepEqual(jointDragQ(machine, start, 0, -358, wide).qModel, [181, 0, 0]);
+  assert.deepEqual(jointDragQ(machine, start, 0, 358, wide).qModel, [177, 0, 0]);
+  assert.throws(() => jointDragQ(machine, start, 3, 0, wide));
 });
 
 test("createAlignment：350 ms 后对齐，重按（cancel）取消", () => {
