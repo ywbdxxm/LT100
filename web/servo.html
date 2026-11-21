@@ -125,7 +125,7 @@
         <button type="button" role="tab" data-panel="calibrate" class="active" aria-selected="true">标定</button>
         <button type="button" role="tab" data-panel="inspect" aria-selected="false">状态</button>
         <button type="button" role="tab" data-panel="test" aria-selected="false">测试</button>
-        <button type="button" role="tab" data-panel="assign" aria-selected="false">配 ID</button>
+        <button type="button" role="tab" data-panel="assign" aria-selected="false">装配</button>
       </nav>
 
       <div class="tab-panel" id="panel-calibrate" role="tabpanel">
@@ -220,8 +220,13 @@
 
       <div class="tab-panel" id="panel-assign" role="tabpanel" hidden>
         <section class="card">
-          <h2>配舵机 ID</h2>
-          <p class="fine">一次只接<b>一颗</b>舵机。读出当前 ID，再选目标：<b>肩 ID1</b>（最下面）、<b>肘 ID2</b>（中间）、<b>腕 ID3</b>（最上面）。写完会自动读回验证。两颗同时接会抢答，工具会拒绝写入。</p>
+          <h2>装配：配 ID → 回中 → 装舵盘</h2>
+          <p class="fine">一次只接<b>一颗</b>舵机。按下面三步做，做完一颗断电换下一颗；三颗都配好再一起接。</p>
+          <ol class="steps">
+            <li><b>配 ID</b><span>读出当前 ID，设成 肩=1 / 肘=2 / 腕=3，贴好标签。出厂都是 ID1，两颗同时接会抢答。</span></li>
+            <li><b>回中装舵盘</b><span>同一颗先「上力」，再点「回中 2048」，把输出轴转到半圈中点后装舵盘/连杆。<b>2048 只是安装参考，不是标定零点。</b></span></li>
+            <li><b>卸力扫行程</b><span>装好后「卸力」，用手把关节从一端扫到另一端看 raw；跨过 4095→0 就换一个舵盘齿/安装位。</span></li>
+          </ol>
           <div class="id-live"><b id="idNow">ID —</b><span id="idOnline">在线 0 颗</span></div>
           <p id="idHint" class="fine id-hint"></p>
           <div class="btn-row">
@@ -235,7 +240,7 @@
           <p id="idMsg" class="fine detect-msg" role="status" aria-live="polite">先把舵机单独接在总线上，再点「读取当前 ID」。</p>
         </section>
         <section class="card" style="margin-top:12px">
-          <h2>安装定位 · 未标定 raw 移动</h2>
+          <h2>回中 / 安装定位</h2>
           <p class="fine">装舵盘/对齿时用：只允许总线上<b>只有一颗</b>舵机，并且该关节<b>还没有标定记录</b>。raw 直接给 0..4095，<b>没有 safe 范围保护</b>；先固定好舵机、手放断电开关旁，速度从 5°/s 起。已有标定的关节请去「测试」页用 JOG。</p>
           <div class="test-live"><b id="rawNow">raw —</b><span id="rawHint">在线 0 颗</span></div>
           <div class="test-target">
@@ -248,10 +253,16 @@
             <button id="rawGoBtn" class="btn" type="button" disabled>去这个 raw</button>
           </div>
           <div class="btn-row">
-            <button id="rawTorqueOn" class="btn tiny" type="button" disabled>上力</button>
-            <button id="rawTorqueOff" class="btn tiny" type="button" disabled>卸力</button>
-            <button id="rawCenterBtn" class="btn tiny" type="button" disabled>去中点 2048</button>
+            <button id="rawTorqueOn" class="btn" type="button" disabled>上力</button>
+            <button id="rawTorqueOff" class="btn" type="button" disabled>卸力</button>
+            <button id="rawCenterBtn" class="btn primary" type="button" disabled>回中 2048（装舵盘前）</button>
           </div>
+          <details class="cal-theory">
+            <summary>上力 / 卸力是什么？和“扭矩”什么关系？</summary>
+            <p><b>上力</b>：打开舵机输出，它会主动顶住当前位置，能抵抗重力。上力前固件会先把目标设为当前位姿，所以不会突然跳。<b>卸力</b>：关掉输出，手能轻松掰动，但舵机仍通电、仍能读 raw；重臂会掉，先扶住。</p>
+            <p><b>扭矩/力矩</b>是轴上的“拧劲”。ST3215 标称堵转 30kg·cm、额定 10kg·cm；网页里的「扭矩 开/关」不是调扭矩数值，只是上力/卸力。负载 <code>load</code> 才是舵机当前出力的百分比。</p>
+            <p>上力不等于锁死：外力超过额定扭矩会推动它，堵转久了会热、会掉压。这也是先标腕、再肘、最后肩的原因。</p>
+          </details>
           <p id="rawMsg" class="fine" role="status" aria-live="polite">只接一颗舵机时可用；上力后舵机会保持当前位置，再走目标。</p>
         </section>
       </div>

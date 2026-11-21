@@ -111,8 +111,9 @@ footer a{color:var(--accent-text)}
 .steps li{position:relative; padding:11px 0 11px 40px; border-bottom:1px dashed var(--line)}
 .steps li:last-child{border-bottom:0}
 .steps li::before{counter-increment:s; content:counter(s); position:absolute; left:0; top:12px; width:26px; height:26px; border-radius:50%; background:var(--accent-soft); color:var(--accent-text); font-size:13px; font-weight:650; display:grid; place-items:center}
-.steps b{display:block; font-weight:600}
+.steps > li > b{display:block; font-weight:600}
 .steps span{color:var(--muted); font-size:13.5px}
+.torque-table th:first-child,.torque-table td:first-child{white-space:nowrap}
 
 /* port table */
 td.p{white-space:nowrap; font-weight:600}

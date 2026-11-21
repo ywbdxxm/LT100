@@ -199,6 +199,7 @@
   .test-target .inline-field input,.test-target .inline-field select{flex:1;max-width:none}
   .test-target .btn{width:100%}
   .btn-row .btn{flex:1 1 calc(50% - 4px)}
+  #rawCenterBtn{flex:1 1 100%}
 }
 
 .split-box{margin:10px 0 0;padding:12px 14px;border:1px solid #e8c27a;background:#fff7e8;border-radius:10px;color:#6b3a00}
@@ -207,3 +208,4 @@
 .split-opt{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.5;margin:4px 0;cursor:pointer}
 .split-opt input{margin-top:2px;accent-color:var(--accent-text)}
 .split-box .btn{margin-top:8px}
+#rawCenterBtn{flex:2 1 0}
