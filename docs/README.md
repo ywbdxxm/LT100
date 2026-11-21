@@ -6,6 +6,7 @@ docs/
 │   ├── design.md
 │   ├── common-platform.md
 │   ├── interactive-applications.md
+│   ├── 3d-twin.md
 │   └── serial-console.md
 ├── build/            采购与搭建
 │   ├── bom.md
@@ -29,6 +30,7 @@ docs/
 | [design/design.md](design/design.md) | 定位、机械/电气现状、架构、硬件契约、灯光、教学模块、风险、升级 | 改方案、查参数 |
 | [design/common-platform.md](design/common-platform.md) | **公版**：机械/电气/固件/主机 SDK/测试五层、协议/标定/安全契约、目录、ADR、实施顺序 | 做底座、定协议、接应用 |
 | [design/interactive-applications.md](design/interactive-applications.md) | 交互应用清单（孪生/IK/覆盖/示教/光绘/仪表盘）、共用底座、微雪出厂固件复用判断、开发顺序 | 做应用、定底座、决定是否复用出厂固件 |
+| [design/3d-twin.md](design/3d-twin.md) | **A1 3D 直接操作孪生方案**：拖灯头/关节、目标 vs 实际 ghost、qFw↔qModel、safe/STOP/验收 | 实现 A1、改 3D 交互 |
 | [design/serial-console.md](design/serial-console.md) | 串口控制台设计：协议、命令、状态机、错误码 | 改固件、定协议 |
 | [../platform/README.md](../platform/README.md) | **公版固件**：目录、编译、host 测试、串口标定/运动操作、安全边界 | 编译、跑测试、上板 |
 | [build/bom.md](build/bom.md) | BOM、实付成本、接线图、选购要点、到货检查、FAQ | 买件、接线、排障 |

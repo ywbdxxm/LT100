@@ -184,6 +184,9 @@
 ```
 
 > `machine.json` 是机械事实（可随结构版本变）；NVS 是这台机器自己的零位/方向/限位。两者不要混。
+>
+> 3D 孪生把“模型参考角”和固件 `CAL STATUS.zero_q` 分开：`reference_pose.q` 是模型参考角（标准姿态 `[90,0,0]`），
+> 固件零点以 `CAL STATUS.zeroQ` 为准，换算见 [3d-twin.md](3d-twin.md) §6.1。不要把 `reference_pose.q` 直接当固件 q。
 
 ### 4.2 标定 schema（NVS，版本 1）
 
