@@ -527,17 +527,19 @@ ERR code=10 seq=42 joint=0 msg=outside_safe
 ```text
 LT100/
 ├── platform/
-│   ├── firmware/
-│   │   ├── lt100_core/          # Arduino library：协议/标定/限位/运动/安全/状态
-│   │   └── apps/lt100_lamp/     # 使用 core 的整机 sketch
+│   ├── libraries/               # Arduino 库根目录（--libraries 指向这里）
+│   │   ├── lt100_core/          # 协议/标定/限位/运动/安全/状态
+│   │   └── lt100_board/         # ESP32 HAL（SCServo/NVS/时钟/串口）
+│   ├── apps/lt100_lamp/         # 使用 core 的整机 sketch
 │   ├── web/
 │   │   ├── sdk/                 # transport/client/kinematics/twin/recorder/apphost
 │   │   └── apps/                # 2d-twin/teach/light-paint/...
 │   └── tests/
 │       ├── host/                # 纯逻辑、契约、mock
+│       ├── web/                 # 网页协议模块 node:test
 │       └── hil/                 # pyserial/pytest
-├── examples/                    # 现有 01–09 保留；10 整机示例后续加
-├── web/                         # 现有页面；逐步迁到 platform/web/apps
+├── examples/                    # 01–08 保持原样；09 已迁到公版
+├── web/                         # 页面；09 标定台已接公版协议，其余逐步迁移
 ├── tools/                       # serial-bridge/web-console/build
 └── docs/
     ├── design/
@@ -547,7 +549,7 @@ LT100/
     └── teach/
 ```
 
-迁移原则：**不搞大爆炸**。先加 `lt100_core` 和 `platform/web/sdk`，现有 01–09/页面不动；新应用只走公版。
+迁移原则：**不搞大爆炸**。01–08 保持原样；09 已作为第一个迁移示例改成公版薄 app，`web/servo.html` 直连 `LT100P/1`。其余页面和新应用只走公版。
 
 构建、测试与标定操作见 [`platform/README.md`](../../platform/README.md)。
 
@@ -583,6 +585,9 @@ LT100/
 - 电源保险丝/走线/底座稳定同步做；机械硬限位作为学生改进项目，不阻塞教学。
 
 **出口**：不接网页，脚本 20Hz 发 `POSE`、10Hz 读 `STATE` 30 分钟；未标定/越界/失联/端点验证用例通过。
+
+**当前进度（2026-11-21）**：契约、`LT100Core`、`LT100Board`、host 测试、09 迁移和网页标定向导已落地；
+出口里的 30 分钟真板 `POSE` 还没做——ID2/ID3 未接，只验证了单关节在线与 mock 流程。
 
 ### Phase 1：SDK + 2D 孪生
 

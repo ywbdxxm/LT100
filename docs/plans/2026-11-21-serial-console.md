@@ -1,5 +1,10 @@
 # LT100 Serial Console Implementation Plan
 
+> **历史存档（2026-11-21）**：08 串口控制台已实现；本文记录当时的实施计划，
+> 命令表与代码可能有后续变化。当前规格以
+> [`docs/design/serial-console.md`](../design/serial-console.md) 和
+> [`docs/teach/serial-console.md`](../teach/serial-console.md) 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a beginner-friendly serial console example that turns PC keystrokes into OLED/LED actions and returns JSON telemetry.

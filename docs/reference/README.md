@@ -3,7 +3,7 @@
 - 下载日期：**2026-11-20**
 - 来源：微雪官方 wiki / 飞特（Feetech）官网 / WorldSemi 数据手册
 - 文件按原样保存，未做任何修改；下表哈希为本次下载的快照，官方若更新会不一致
-- 这些是**只读参考**，不要在这里改文件；结论写进 [design.md](../design/design.md) 或 [build-bom.md](../build/bom.md)
+- 这些是**只读参考**，不要在这里改文件；结论写进 [design.md](../design/design.md) 或 [bom.md](../build/bom.md)
 
 ---
 
@@ -82,4 +82,4 @@
 
 - `Robots.zip`（<https://www.waveshare.net/w/upload/2/21/Robots.zip>，3.7 MB）——微雪自家的蜘蛛/机械臂 STEP 结构件，**不是 LT100 这套台灯结构**；已看过清单，没存
 - 舵机协议细节（内存表地址）——在 ST 例程的库源码里，不在数据手册
-- 3D 打印件（机械臂结构）——已切片的 14 个 3MF 在 `LT100/结构/`，直接进打印机
+- 3D 打印件（机械臂结构）——已切片的 14 个 3MF 在 `LT100/hardware/prints/`，直接进打印机

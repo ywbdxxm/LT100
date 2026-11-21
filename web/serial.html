@@ -12,7 +12,7 @@
   <div class="wrap serial-top-inner">
     <a class="back" href="index.html#serial">← 返回 LT100</a>
     <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">网页串口控制台</span></div>
-    <div class="conn-state" id="connState"><span class="dot"></span><span id="connText">未连接</span></div>
+    <div class="conn-state" id="connState" role="status" aria-live="polite"><span class="dot"></span><span id="connText">未连接</span></div>
   </div>
 </header>
 
@@ -20,7 +20,7 @@
   <section class="serial-intro">
     <div>
       <h1>网页直接连板子</h1>
-      <p class="lead">不用 Arduino IDE，不用串口助手。点「连接串口」，选 CP210x 的 COM 口，就能发命令、调灯、看状态。</p>
+      <p class="lead">不用 Arduino IDE，不用串口助手。双击 <code>start-web-console.bat</code> 启动本机桥，点「连接串口」就能发命令、调灯、看状态；桥不可用时才回退 Web Serial。</p>
     </div>
     <div class="serial-actions">
       <button id="connectBtn" class="btn primary" type="button">连接串口</button>
@@ -116,16 +116,16 @@
     <h2>第一次用</h2>
     <ol class="plain">
       <li>板上已经烧录 <code>08_serial_console</code>；如果还是别的例程，先上传 08。</li>
-      <li>双击 <code>start-web-console.bat</code>，它会启动本地页面并打开浏览器。</li>
-      <li>点「连接串口」，在浏览器弹窗里选 <b>Silicon Labs CP210x</b> 对应的 COM 口。</li>
+      <li>双击 <code>start-web-console.bat</code>，它会启动本机串口桥并打开页面。</li>
+      <li>点「连接串口」；本机桥会自动打开 CP210x，不用手选 COM。桥不可用时才弹出 Web Serial 端口选择。</li>
       <li>看到 <code>PONG</code> 就可以玩：改灯、发文字、看 <code>STAT</code>。没有回复时，先发 <code>PING</code>，或按一下板子的 EN。</li>
     </ol>
-    <p class="fine">需要 Chrome / Edge 89+，或 Firefox 151+；Safari 不支持。页面必须从 <code>localhost</code> 或 HTTPS 打开，不能直接双击 HTML。</p>
+    <p class="fine">运行控制台时串口被本机桥占用；Arduino IDE 的串口监视器要先关掉，烧录前也要先关控制台。页面必须从 <code>localhost</code> 或 HTTPS 打开，不能直接双击 HTML。桥优先，Web Serial 回退需要 Chrome / Edge 89+ 或 Firefox 151+；Safari 只能用桥。</p>
   </section>
 </main>
 
 <footer class="wrap serial-footer">
-  LT100 · 网页串口控制台 · <a href="index.html#serial">串口原理</a> · <a href="servo.html">舵机标定台</a> · <a href="../docs/teach/serial-console.md">命令文档</a>
+  LT100 · 网页串口控制台 · <a href="index.html#serial">串口原理</a> · <a href="servo.html">标定/检测台</a> · <a href="../docs/teach/serial-console.md">命令文档</a>
 </footer>
 
 <script src="serial.js"></script>

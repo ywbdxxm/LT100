@@ -1,845 +1,1047 @@
-(() => {
-  'use strict';
+// LT100P/1 calibration and detection console.
+// The page talks to the local serial bridge first, then falls back to Web Serial.
+import {
+  calClearCommand,
+  calComplete,
+  calDirCommand,
+  calMarkCommand,
+  calRefCommand,
+  commands,
+  endpointPose,
+  ERROR_LABELS,
+  formatQ,
+  maskCount,
+  MODE_LABELS,
+  parseCalLine,
+  parseError,
+  parseHello,
+  parseLimitsLine,
+  parseLine,
+  parseState,
+  poseCommand,
+  rawToQ,
+  safeRange,
+  torqueCommand,
+} from "./lt100-protocol.mjs";
 
-  const $ = (id) => document.getElementById(id);
-  const ui = {
-    connState: $('connState'), connText: $('connText'),
-    connectBtn: $('connectBtn'), disconnectBtn: $('disconnectBtn'), portInfo: $('portInfo'),
-    support: $('support'), hint: $('hint'), joints: $('joints'),
-    log: $('log'), clearLog: $('clearLog'), sendForm: $('sendForm'),
-    cmd: $('cmd'), sendBtn: $('sendBtn'),
-    currentJoint: $('currentJoint'), currentJoint2: $('currentJoint2'),
-    torqueOffBtn: $('torqueOffBtn'), markMinBtn: $('markMinBtn'),
-    markMaxBtn: $('markMaxBtn'), torqueOnBtn: $('torqueOnBtn'),
-    liveRead: $('liveRead'), safeLine: $('safeLine'),
-    target: $('target'), speed: $('speed'), moveBtn: $('moveBtn'),
-    refreshBtn: $('refreshBtn'), clearBtn: $('clearBtn'),
-  };
+const $ = (id) => document.getElementById(id);
+const mock = new URLSearchParams(location.search).has("mock");
+const autoConnect = new URLSearchParams(location.search).has("auto");
+const bridgeUrl = "ws://127.0.0.1:8771/serial";
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const encoder = new TextEncoder();
-  const decoder = new TextDecoder();
-  const mock = new URLSearchParams(location.search).has('mock');
-  const bridgeUrl = 'ws://127.0.0.1:8771/serial';
-  const supportsSerial = !!navigator.serial;
-  const secure = window.isSecureContext;
-  const isFile = location.protocol === 'file:';
-  // A local WebSocket bridge works without Web Serial; localhost is still
-  // required because the bridge only listens on 127.0.0.1.
-  const canUse = mock || (secure && !isFile);
+let transport = null;
+let connected = false;
+let busy = false;
+let tearingDown = false;
+let lineBuf = "";
+let pending = null;
+let hello = null;
+let lastState = null;
+let lastErr = null;
+let cals = [null, null, null];
+let limits = [null, null, null];
+let calAccumulator = [];
+let limitsAccumulator = [];
+let selected = 1;
+let seq = 1;
+let testTimer = null;
+let testTarget = null;
+let testNear = 0;
+let testDeadline = 0;
+let logLines = [];
 
-  const blank = () => ({
-    online: false, pos: null, volt: null, temp: null, load: null,
-    min: null, max: null, safeMin: null, safeMax: null,
+function appendLog(kind, text) {
+  logLines.push({
+    kind,
+    text,
+    time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
   });
-  const joints = { 1: blank(), 2: blank(), 3: blank() };
-  const torqueOff = { 1: false, 2: false, 3: false };
+  if (logLines.length > 400) logLines.shift();
+  renderLog();
+}
 
-  let selected = 1;
-  let port = null;
-  let bridge = null;
-  let writer = null;
-  let reader = null;
-  let connected = false;
-  let busy = false;
-  let polling = false;
-  let tearingDown = false;
-  let lineBuf = '';
-  let pending = null;
-  let pollTimer = null;
-
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  function timeStamp() {
-    return new Date().toLocaleTimeString('zh-CN', { hour12: false });
+function renderLog() {
+  const el = $("log");
+  el.textContent = "";
+  for (const item of logLines) {
+    const row = document.createElement("div");
+    row.className = `log-line ${item.kind}`;
+    const time = document.createElement("span");
+    time.className = "log-time";
+    time.textContent = item.time;
+    const mark = document.createElement("span");
+    mark.className = "log-mark";
+    mark.textContent = item.kind === "tx" ? "›" : item.kind === "rx" ? "‹" : item.kind === "err" ? "!" : "·";
+    const text = document.createElement("span");
+    text.className = "log-text";
+    text.textContent = item.text;
+    row.append(time, mark, text);
+    el.appendChild(row);
   }
+  el.scrollTop = el.scrollHeight;
+}
 
-  function appendLog(kind, text) {
-    const line = document.createElement('div');
-    line.className = `log-line ${kind}`;
-    const time = document.createElement('span');
-    time.className = 'log-time';
-    time.textContent = timeStamp();
-    const mark = document.createElement('span');
-    mark.className = 'log-mark';
-    mark.textContent = { tx: '→', rx: '←', err: '!', sys: '·' }[kind] || '·';
-    const body = document.createElement('span');
-    body.className = 'log-text';
-    body.textContent = text;
-    line.append(time, mark, body);
-    const atBottom = ui.log.scrollTop + ui.log.clientHeight >= ui.log.scrollHeight - 24;
-    ui.log.appendChild(line);
-    while (ui.log.children.length > 500) ui.log.firstElementChild.remove();
-    if (atBottom) ui.log.scrollTop = ui.log.scrollHeight;
+function setNotice(id, text, show = true) {
+  const el = $(id);
+  el.textContent = text;
+  el.hidden = !show;
+}
+
+function setWizard(text) {
+  $("wizMsg").textContent = text;
+}
+
+function setTestMsg(text) {
+  $("testMsg").textContent = text;
+}
+
+function modeLabel(mode) {
+  return MODE_LABELS[mode] ?? mode ?? "—";
+}
+
+function errorLabel(code) {
+  if (!code) return "—";
+  return `${code} · ${ERROR_LABELS[code] ?? "未知"}`;
+}
+
+function rawInsideSafe(index) {
+  const cal = cals[index];
+  const raw = lastState?.raw?.[index];
+  const range = safeRange(cal);
+  return Boolean(range && Number.isFinite(raw) && raw >= range.min && raw <= range.max);
+}
+
+function allInsideSafe() {
+  return [0, 1, 2].every((index) => rawInsideSafe(index));
+}
+
+function setConnected(value, label = "") {
+  connected = value;
+  const state = $("connState");
+  state.classList.toggle("ok", value);
+  state.classList.toggle("busy", busy && !value);
+  $("connText").textContent = value ? "已连接" : "未连接";
+  $("portInfo").textContent = label || (value ? "串口" : "未连接");
+  $("connectBtn").disabled = value || busy;
+  $("disconnectBtn").disabled = !value || busy;
+  updateButtons();
+  render();
+}
+
+function feed(text) {
+  lineBuf += text;
+  const parts = lineBuf.split("\n");
+  lineBuf = parts.pop() ?? "";
+  for (const part of parts) {
+    const line = part.replace(/\r$/, "");
+    if (line.trim()) handleLine(line);
   }
+}
 
-  function showNotice(el, text) {
-    el.hidden = false;
-    el.textContent = text;
-  }
+function sendRaw(command, log = true) {
+  if (!connected || !transport) throw new Error("未连接");
+  if (log) appendLog("tx", command);
+  transport.write(`${command}\n`);
+}
 
-  function setConnState(text, kind) {
-    ui.connText.textContent = text;
-    ui.connState.className = 'conn-state' + (kind ? ` ${kind}` : '');
-  }
-
-  function setPortInfo(text) {
-    ui.portInfo.textContent = text;
-  }
-
-  function hasLimits(j) {
-    return j.safeMin !== null && j.safeMax !== null;
-  }
-
-  function stateOf(j) {
-    if (!j.online) return { text: '离线', cls: '' };
-    if (hasLimits(j)) return { text: '已标定', cls: 'ok' };
-    return { text: '在线', cls: 'ok' };
-  }
-
-  function fmtPos(j) {
-    return j.online && j.pos !== null ? String(j.pos).padStart(4, '0') : '----';
-  }
-
-  function renderJoint(id) {
-    const j = joints[id];
-    const state = stateOf(j);
-    const card = document.querySelector(`.joint-card[data-id="${id}"]`);
-    $(`j${id}state`).textContent = state.text;
-    $(`j${id}state`).className = `pill ${state.cls}`;
-    $(`j${id}pos`).textContent = fmtPos(j);
-    $(`j${id}volt`).textContent = j.volt !== null ? `${j.volt.toFixed(1)} V` : '—';
-    $(`j${id}temp`).textContent = j.temp !== null ? `${j.temp} °C` : '—';
-    $(`j${id}load`).textContent = j.load !== null ? String(j.load) : '—';
-    let safe = '安全区：未标定';
-    if (hasLimits(j)) {
-      safe = `安全区：${j.safeMin}..${j.safeMax}（raw ${j.min}..${j.max}）`;
-      $(`j${id}safe`).className = 'joint-safe cal';
-    } else if (j.min !== null) {
-      safe = `已标 MIN ${j.min}，还缺 MAX（raw 更大的端点）`;
-      $(`j${id}safe`).className = 'joint-safe';
-    } else if (j.max !== null) {
-      safe = `已标 MAX ${j.max}，还缺 MIN（raw 更小的端点）`;
-      $(`j${id}safe`).className = 'joint-safe';
-    } else {
-      $(`j${id}safe`).className = 'joint-safe';
-    }
-    $(`j${id}safe`).textContent = safe;
-    card.classList.toggle('offline', !j.online);
-    card.classList.toggle('selected', id === selected);
-    card.setAttribute('aria-pressed', String(id === selected));
-  }
-
-  function renderSteps() {
-    const j = joints[selected];
-    const done = [
-      j.online,
-      torqueOff[selected] || j.min !== null || j.max !== null,
-      j.min !== null,
-      j.max !== null,
-      hasLimits(j) && !torqueOff[selected],
-    ];
-    let active = j.online ? -1 : 0;
-    if (j.online) {
-      if (hasLimits(j)) {
-        if (torqueOff[selected]) active = 4;
-      } else if (!torqueOff[selected]) {
-        active = 1;
-      } else if (j.min === null) {
-        active = 2;
-      } else if (j.max === null) {
-        active = 3;
-      }
-    }
-    document.querySelectorAll('.step-row').forEach((row) => {
-      const i = Number(row.dataset.step) - 1;
-      row.classList.toggle('done', !!done[i]);
-      row.classList.toggle('active', i === active);
-    });
-    $('s1state').textContent = j.online ? '已选' : '离线';
-  }
-
-  function updateButtons() {
-    const j = joints[selected];
-    const locked = busy || polling;
-    const online = connected && j.online;
-    ui.connectBtn.disabled = connected || busy || !canUse;
-    ui.connectBtn.textContent = connected ? '已连接' : '连接串口';
-    ui.disconnectBtn.disabled = !connected || busy;
-    ui.torqueOffBtn.disabled = !online || locked || torqueOff[selected];
-    ui.markMinBtn.disabled = !online || locked || !torqueOff[selected];
-    ui.markMaxBtn.disabled = !online || locked || !torqueOff[selected];
-    ui.torqueOnBtn.disabled = !online || locked;
-    ui.moveBtn.disabled = !online || locked || !hasLimits(j) || torqueOff[selected];
-    ui.refreshBtn.disabled = !connected || locked;
-    ui.clearBtn.disabled = !connected || locked;
-    ui.target.disabled = !online || locked || !hasLimits(j);
-    ui.speed.disabled = !online || locked;
-    ui.cmd.disabled = !connected || locked;
-    ui.sendBtn.disabled = !connected || locked;
-    ui.clearLog.disabled = false;
-    document.querySelectorAll('[data-cmd]').forEach((button) => { button.disabled = !connected || locked; });
-    ui.liveRead.disabled = !connected;
-  }
-
-  function render() {
-    for (const id of [1, 2, 3]) renderJoint(id);
-    const j = joints[selected];
-    const label = `ID${selected}`;
-    ui.currentJoint.textContent = label;
-    ui.currentJoint2.textContent = label;
-    if (hasLimits(j)) {
-      ui.safeLine.className = 'safe-line cal';
-      ui.safeLine.textContent = `安全区 ${j.safeMin}..${j.safeMax}（raw ${j.min}..${j.max}，已留 40 格余量）`;
-      ui.target.min = String(j.safeMin);
-      ui.target.max = String(j.safeMax);
-      const value = Number(ui.target.value);
-      if (!ui.target.value || Number.isNaN(value) || value < j.safeMin || value > j.safeMax) {
-        const fallback = j.pos !== null ? Math.min(j.safeMax, Math.max(j.safeMin, j.pos)) : j.safeMin;
-        ui.target.value = String(fallback);
-      }
-    } else {
-      ui.safeLine.className = 'safe-line';
-      ui.safeLine.textContent = j.online ? '未标定：先记录 raw 较小（MIN）和较大（MAX）的端点，MOVE 会被拒绝' : '离线：接 12V / 3P 线后刷新';
-      ui.target.removeAttribute('min');
-      ui.target.removeAttribute('max');
-      ui.target.value = '';
-    }
-    renderSteps();
-    updateButtons();
-  }
-
-  function parseLine(line) {
-    let m;
-    if ((m = line.match(/^ID(\d) offline$/))) {
-      joints[m[1]] = blank();
-      return;
-    }
-    if ((m = line.match(/^ID(\d) pos=(-?\d+) v=([\d.]+)V t=(-?\d+)C load=(-?\d+)$/))) {
-      const j = joints[m[1]];
-      j.online = true;
-      j.pos = Number(m[2]);
-      j.volt = Number(m[3]);
-      j.temp = Number(m[4]);
-      j.load = Number(m[5]);
-      return;
-    }
-    if ((m = line.match(/^ID(\d) limits raw=(\d+)\.\.(\d+) safe=(-?\d+)\.\.(-?\d+)$/))) {
-      const j = joints[m[1]];
-      j.min = Number(m[2]);
-      j.max = Number(m[3]);
-      j.safeMin = Number(m[4]);
-      j.safeMax = Number(m[5]);
-      return;
-    }
-    if ((m = line.match(/^ID(\d) limits min=(\d+), MAX unset/))) {
-      const j = joints[m[1]];
-      j.min = Number(m[2]);
-      j.max = null;
-      j.safeMin = null;
-      j.safeMax = null;
-      return;
-    }
-    if ((m = line.match(/^ID(\d) limits MAX=(\d+), min unset/))) {
-      const j = joints[m[1]];
-      j.min = null;
-      j.max = Number(m[2]);
-      j.safeMin = null;
-      j.safeMax = null;
-      return;
-    }
-    if (/^ID\d+ limits UNSET/.test(line)) {
-      const id = Number(line.match(/^ID(\d)/)[1]);
-      joints[id].min = null;
-      joints[id].max = null;
-      joints[id].safeMin = null;
-      joints[id].safeMax = null;
-      return;
-    }
-    if ((m = line.match(/^OK torque ID(\d) (ON|OFF)/))) {
-      torqueOff[m[1]] = m[2] === 'OFF';
-      return;
-    }
-    if ((m = line.match(/^OK mark ID(\d) (MIN|MAX) raw=(-?\d+)/))) {
-      const j = joints[m[1]];
-      if (m[2] === 'MIN') j.min = Number(m[3]);
-      else j.max = Number(m[3]);
-      if (j.min !== null && j.max !== null) {
-        j.safeMin = j.min + 40;
-        j.safeMax = j.max - 40;
-      }
-    }
-  }
-
-  function resolvePending(line) {
-    if (!pending) return;
-    if (pending.re.test(line)) {
-      const p = pending;
-      pending = null;
-      clearTimeout(p.timer);
-      p.resolve(line);
-    }
-  }
-
-  let renderTimer = null;
-  let quietRender = false;
-  let quietSerial = false;
-
-  function scheduleRender() {
-    if (quietRender || renderTimer) return;
-    renderTimer = setTimeout(() => {
-      renderTimer = null;
-      render();
-    }, 16);
-  }
-
-  function handleLine(raw) {
-    const line = raw.trim();
-    if (!line) return;
-    const quietPoll = polling && /^ID\d+ pos=/.test(line);
-    if (!quietSerial && !quietPoll) appendLog('rx', line);
-    parseLine(line);
-    resolvePending(line);
-    scheduleRender();
-  }
-
-  // Keep the reader draining: process complete lines in a later task, and
-  // coalesce DOM updates so a burst (SCAN/LIMITS) cannot overrun Web Serial.
-  let rxTimer = null;
-
-  function processLines() {
-    rxTimer = null;
-    const parts = lineBuf.split('\n');
-    lineBuf = parts.pop();
-    for (const part of parts) handleLine(part.replace(/\r$/, ''));
-  }
-
-  function onChunk(value) {
-    lineBuf += decoder.decode(value, { stream: true });
-    if (!rxTimer) rxTimer = setTimeout(processLines, 0);
-  }
-
-  async function sendAndWait(cmd, re, timeout = 4500) {
-    if (!writer) throw new Error('未连接串口');
-    if (pending) throw new Error('上一条命令还在等回复');
-    if (!polling) appendLog('tx', cmd);
-    let resolveFn;
-    let rejectFn;
-    const promise = new Promise((resolve, reject) => {
-      resolveFn = resolve;
-      rejectFn = reject;
-    });
+function request(command, match, timeout = 3000) {
+  if (!connected) return Promise.reject(new Error("未连接"));
+  if (pending) return Promise.reject(new Error("上一条命令还在等待回复"));
+  return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      if (pending && pending.timer === timer) {
-        pending = null;
-        rejectFn(new Error(`等待回复超时：${cmd}`));
-      }
+      if (!pending) return;
+      pending = null;
+      reject(new Error(`${command} 超时`));
     }, timeout);
-    pending = { re, resolve: resolveFn, reject: rejectFn, timer };
-    try {
-      await writer.write(encoder.encode(cmd + '\n'));
-    } catch (err) {
-      if (pending && pending.timer === timer) {
-        pending = null;
+    pending = {
+      command,
+      match,
+      resolve: (parsed) => {
         clearTimeout(timer);
-      }
-      throw err;
-    }
-    return promise;
-  }
-
-  async function sendRaw(cmd) {
-    if (!writer) throw new Error('未连接串口');
-    appendLog('tx', cmd);
-    await writer.write(encoder.encode(cmd + '\n'));
-  }
-
-  async function refreshAll() {
-    if (!connected) return;
-    if (renderTimer) {
-      clearTimeout(renderTimer);
-      renderTimer = null;
-    }
-    quietRender = true;
+        pending = null;
+        resolve(parsed);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        pending = null;
+        reject(error);
+      },
+    };
     try {
-      for (const id of [1, 2, 3]) joints[id].online = false;
-      await sendAndWait('SCAN', /^SCAN done:|^ERR/, 5000);
-      for (const id of [1, 2, 3]) {
-        joints[id].min = null;
-        joints[id].max = null;
-        joints[id].safeMin = null;
-        joints[id].safeMax = null;
+      sendRaw(command);
+    } catch (error) {
+      clearTimeout(timer);
+      pending = null;
+      reject(error);
+    }
+  });
+}
+
+function isOk(parsed, text) {
+  return parsed.verb === "OK" && (parsed.args[0] ?? "") === text;
+}
+
+function handleLine(line) {
+  const parsed = parseLine(line);
+  if (!parsed) return;
+  if (parsed.verb !== "STATE") appendLog("rx", line);
+
+  if (parsed.verb === "HELLO") {
+    hello = parseHello(line);
+    render();
+  } else if (parsed.verb === "STATE") {
+    const state = parseState(line);
+    if (state) {
+      lastState = state;
+      if (state.err) {
+        lastErr = { code: state.err, msg: ERROR_LABELS[state.err] ?? "" };
       }
-      await sendAndWait('LIMITS', /^OK limits$|^ERR/, 2000);
-    } finally {
-      quietRender = false;
       render();
     }
-  }
-
-  async function run(fn) {
-    if (busy || polling) return;
-    busy = true;
-    updateButtons();
-    try {
-      await fn();
-    } catch (err) {
-      appendLog('err', err && err.message ? err.message : String(err));
-    } finally {
-      busy = false;
-      updateButtons();
-      render();
+  } else if (parsed.verb === "CAL") {
+    const cal = parseCalLine(line);
+    if (cal && cal.id >= 1 && cal.id <= 3) {
+      cals[cal.id - 1] = cal;
+      calAccumulator.push(cal);
     }
-  }
-
-  function startPolling() {
-    stopPolling();
-    if (!connected || !ui.liveRead.checked) return;
-    pollTimer = setInterval(pollSelected, 900);
-  }
-
-  function stopPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = null;
-  }
-
-  async function pollSelected() {
-    if (!connected || busy || polling || !ui.liveRead.checked) return;
-    polling = true;
-    updateButtons();
-    try {
-      await sendAndWait(`READ ${selected}`, /^ID\d+ pos=|^ERR/, 1800);
-    } catch {
-      // Polling is best-effort; do not spam the log.
-    } finally {
-      polling = false;
-      updateButtons();
+  } else if (parsed.verb === "LIMITS") {
+    const limit = parseLimitsLine(line);
+    if (limit && limit.id >= 1 && limit.id <= 3) {
+      limits[limit.id - 1] = limit;
+      limitsAccumulator.push(limit);
     }
+  } else if (parsed.verb === "ERR") {
+    lastErr = parseError(line);
+    appendLog("err", `ERR ${lastErr.code} ${lastErr.msg}`);
+    if (testTimer) stopTest(`固件报错：${lastErr.code} ${lastErr.msg}`);
+    if (pending) pending.reject(new Error(`ERR ${lastErr.code} ${lastErr.msg}`));
   }
 
-  let readFailed = false;
+  if (pending && pending.match(parsed)) pending.resolve(parsed);
+}
 
-  async function readLoop() {
-    reader = port.readable.getReader();
+async function collectCal() {
+  cals = [null, null, null];
+  calAccumulator = [];
+  await request(commands.calStatus, (p) => isOk(p, "cal"));
+  render();
+}
+
+async function collectLimits() {
+  limits = [null, null, null];
+  limitsAccumulator = [];
+  await request(commands.limits, (p) => isOk(p, "limits"));
+  render();
+}
+
+async function refreshAll() {
+  await request(commands.state, (p) => p.verb === "STATE");
+  await collectCal();
+  await collectLimits();
+}
+
+function openBridge() {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const ws = new WebSocket(bridgeUrl);
+    ws.binaryType = "arraybuffer";
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { ws.close(); } catch {}
+      reject(new Error("串口桥连接超时"));
+    }, 1600);
+
+    ws.onopen = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      transport = {
+        kind: "bridge",
+        write(text) {
+          if (ws.readyState !== WebSocket.OPEN) throw new Error("串口桥已断开");
+          ws.send(text);
+        },
+        close() { ws.close(); },
+      };
+      ws.onmessage = (event) => {
+        if (typeof event.data === "string") feed(event.data);
+        else feed(new TextDecoder().decode(new Uint8Array(event.data)));
+      };
+      ws.onclose = () => {
+        if (!tearingDown && connected) handleTransportLost("串口桥断开");
+      };
+      resolve();
+    };
+    ws.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error("串口桥未启动"));
+    };
+    ws.onclose = () => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error("串口桥未启动"));
+      }
+    };
+  });
+}
+
+async function openWebSerial() {
+  if (!navigator.serial) throw new Error("浏览器不支持 Web Serial");
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 115200 });
+  const writer = port.writable.getWriter();
+  const reader = port.readable.getReader();
+  const decoder = new TextDecoder();
+  transport = {
+    kind: "serial",
+    write(text) { writer.write(new TextEncoder().encode(text)); },
+    close() {
+      try { reader.cancel(); } catch {}
+      try { writer.releaseLock(); } catch {}
+      try { port.close(); } catch {}
+    },
+  };
+  (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-        if (value) onChunk(value);
+        if (value) feed(decoder.decode(value, { stream: true }));
       }
-    } catch (err) {
-      if (!tearingDown) {
-        readFailed = true;
-        appendLog('err', `读取中断：${err && err.message ? err.message : err}`);
-        if (pending) {
-          const p = pending;
-          pending = null;
-          clearTimeout(p.timer);
-          p.reject(new Error('读取中断'));
-        }
-      }
+    } catch (error) {
+      if (!tearingDown) appendLog("err", `串口读取中断：${error.message ?? error}`);
     } finally {
-      try { reader.releaseLock(); } catch {}
-      reader = null;
+      reader.releaseLock?.();
+      if (!tearingDown && connected) handleTransportLost("串口断开");
     }
-  }
+  })();
+}
 
-  function connectBridge() {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const ws = new WebSocket(bridgeUrl);
-      ws.binaryType = 'arraybuffer';
-      const timer = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        try { ws.close(); } catch {}
-        reject(new Error('连接超时'));
-      }, 1500);
+async function openMock() {
+  const link = new MockLink(feed);
+  transport = {
+    kind: "mock",
+    write(text) { link.write(text); },
+    close() { link.close(); },
+  };
+  $("mockBadge").hidden = false;
+  $("portInfo").textContent = "模拟端口（不连硬件）";
+}
 
-      ws.onopen = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        bridge = ws;
-        port = null;
-        reader = null;
-        writer = {
-          async write(bytes) {
-            if (ws.readyState !== WebSocket.OPEN) throw new Error('串口桥已断开');
-            ws.send(decoder.decode(bytes));
-          },
-          releaseLock() {},
-        };
-        connected = true;
-        setConnState('已连接', 'ok');
-        setPortInfo('本机串口桥 / CP210x');
-        appendLog('sys', '串口桥已连接；舵机总线由本机服务转发');
-        resolve();
-      };
-      ws.onmessage = (event) => {
-        const text = typeof event.data === 'string'
-          ? event.data
-          : decoder.decode(new Uint8Array(event.data));
-        onChunk(encoder.encode(text));
-      };
-      ws.onerror = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        try { ws.close(); } catch {}
-        reject(new Error('串口桥未启动'));
-      };
-      ws.onclose = () => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          reject(new Error('串口桥未启动'));
-          return;
-        }
-        if (tearingDown || !connected) return;
-        appendLog('err', '串口桥连接断开');
-        teardown().then(() => { updateButtons(); render(); });
-      };
-    });
-  }
+async function handshake() {
+  await request(commands.hello, (p) => p.verb === "HELLO", 2500);
+  await request(commands.streamOn, (p) => p.verb === "OK" && p.fields.stream === "on", 2000);
+  await request(commands.state, (p) => p.verb === "STATE", 2000);
+  await collectCal();
+  await collectLimits();
+}
 
-  async function connect() {
-    if (connected || busy) return;
-    busy = true;
+async function connect() {
+  if (connected || busy) return;
+  busy = true;
+  updateButtons();
+  try {
+    lineBuf = "";
+    pending = null;
+    hello = null;
+    lastState = null;
+    lastErr = null;
+    cals = [null, null, null];
+    limits = [null, null, null];
+    if (mock) {
+      await openMock();
+    } else {
+      try {
+        await openBridge();
+        appendLog("sys", "已连接本机串口桥 ws://127.0.0.1:8771/serial");
+      } catch (bridgeError) {
+        appendLog("sys", `本机串口桥不可用：${bridgeError.message}；尝试 Web Serial`);
+        await openWebSerial();
+        appendLog("sys", "已连接 Web Serial；打开串口可能让板子复位一次");
+      }
+    }
+    setConnected(true, mock ? "模拟端口" : transport.kind === "bridge" ? "本机串口桥 / CP210x" : "CP210x / Web Serial");
+    await sleep(mock ? 60 : 300);
+    await handshake();
+    setWizard("已连接；先确认三个关节在线，再按步骤卸力标定。");
+    appendLog("sys", "LT100P/1 握手完成");
+  } catch (error) {
+    appendLog("err", `连接失败：${error.message ?? error}`);
+    setNotice("hint", `连接失败：${error.message ?? error}`);
+    await disconnect(false);
+  } finally {
+    busy = false;
+    setConnected(connected, transport?.kind === "mock" ? "模拟端口" : transport?.kind === "bridge" ? "本机串口桥 / CP210x" : transport?.kind === "serial" ? "CP210x / Web Serial" : "");
     updateButtons();
-    try {
-      if (!mock) {
-        quietSerial = true;
-        quietRender = true;
-        lineBuf = '';
-        try {
-          await connectBridge();
-        } catch (err) {
-          quietSerial = false;
-          quietRender = false;
-          appendLog('sys', `本机串口桥不可用：${err && err.message ? err.message : err}；尝试 Web Serial`);
-          await teardown();
-        }
-        if (connected) {
-          try {
-            await sleep(250);
-            if (!connected) throw new Error('串口桥连接断开');
-            await refreshAll();
-            quietSerial = false;
-            quietRender = false;
-            appendLog('sys', '串口桥就绪：启动信息已忽略');
-            if (ui.liveRead.checked) startPolling();
-          } catch (err) {
-            quietSerial = false;
-            quietRender = false;
-            appendLog('err', `连接失败：${err && err.message ? err.message : err}`);
-            await teardown();
-          }
-          return;
-        }
-      }
-      const serialPort = mock ? createMockPort() : await navigator.serial.requestPort();
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          port = serialPort;
-          readFailed = false;
-          // Web Serial's default input buffer is only 255 B; a SCAN/LIMITS burst
-          // can overrun it while Chrome renders. Keep a larger receive buffer.
-          await port.open({ baudRate: 115200, bufferSize: 8192 });
-          lineBuf = '';
-          writer = port.writable.getWriter();
-          connected = true;
-          setConnState('已连接', 'ok');
-          setPortInfo(mock ? '模拟端口（不连硬件）' : 'CP210x / Web Serial');
-          appendLog('sys', mock ? '模拟端口已连接；不会驱动真实舵机' : `串口已连接（第 ${attempt} 次）；打开串口可能让板子复位一次`);
-          quietSerial = true;
-          quietRender = true;
-          readLoop();
-          await sleep(mock ? 80 : 2500);
-          if (readFailed) throw new Error('读取中断');
-          await refreshAll();
-          quietSerial = false;
-          quietRender = false;
-          appendLog('sys', '串口就绪：启动信息已忽略');
-          if (ui.liveRead.checked) startPolling();
-          return;
-        } catch (err) {
-          quietSerial = false;
-          quietRender = false;
-          appendLog('err', `连接失败${attempt < 2 ? '，正在重连' : ''}：${err && err.message ? err.message : err}`);
-          await teardown();
-          if (attempt < 2) await sleep(500);
-          else throw err;
-        }
-      }
-    } catch (err) {
-      quietSerial = false;
-      quietRender = false;
-      appendLog('err', `连接失败：${err && err.message ? err.message : err}`);
-      await teardown();
-    } finally {
-      quietSerial = false;
-      quietRender = false;
-      busy = false;
-      updateButtons();
-      render();
+  }
+}
+
+function handleTransportLost(reason) {
+  if (tearingDown) return;
+  stopTest(reason);
+  appendLog("err", reason);
+  setNotice("hint", reason);
+  try { transport?.close(); } catch {}
+  transport = null;
+  if (pending) pending.reject(new Error(reason));
+  pending = null;
+  setConnected(false);
+}
+
+async function disconnect(manual = true) {
+  tearingDown = true;
+  stopTest();
+  try {
+    if (connected && transport) transport.write("STOP\n");
+  } catch {}
+  try { transport?.close(); } catch {}
+  transport = null;
+  connected = false;
+  pending = null;
+  lineBuf = "";
+  if (manual) appendLog("sys", "已断开");
+  tearingDown = false;
+  setConnected(false, "未连接");
+  updateButtons();
+}
+
+function render() {
+  const state = lastState;
+  const online = state?.online ?? 0;
+  const calMask = state?.cal ?? 0;
+  const torque = state?.torque ?? 0;
+  $("stMode").textContent = modeLabel(state?.mode ?? "—");
+  $("stOnline").textContent = `${maskCount(online)}/3`;
+  $("stCal").textContent = `${maskCount(calMask)}/3`;
+  $("stTorque").textContent = `${maskCount(torque)}/3`;
+  $("stErr").textContent = state?.err ? errorLabel(state.err) : "—";
+  $("stAge").textContent = state ? `${state.age} ms` : "—";
+  $("stVolt").textContent = state ? `${(state.v / 10).toFixed(1)} V` : "—";
+  $("stErr").parentElement.classList.toggle("error", Boolean(state?.err));
+
+  for (let i = 0; i < 3; i++) {
+    const id = i + 1;
+    const isOnline = Boolean(online & (1 << i));
+    const cal = cals[i];
+    const limit = limits[i];
+    const raw = state?.raw?.[i] ?? null;
+    const q = cal?.valid && Number.isFinite(raw) ? rawToQ(cal, raw) : null;
+    const card = document.querySelector(`.joint-card[data-id="${id}"]`);
+    card.classList.toggle("selected", selected === id);
+    card.classList.toggle("offline", !isOnline);
+    card.setAttribute("aria-pressed", selected === id ? "true" : "false");
+    const pill = $(`j${id}state`);
+    pill.className = "pill";
+    if (!isOnline) {
+      pill.textContent = "离线";
+    } else if (cal?.valid) {
+      pill.classList.add("ok");
+      pill.textContent = "已标定";
+    } else {
+      pill.classList.add("warn");
+      pill.textContent = "在线 / 未标定";
     }
+    $(`j${id}raw`).textContent = isOnline && Number.isFinite(raw) ? String(raw) : "----";
+    $(`j${id}q`).textContent = q === null ? "q —" : `q ${formatQ(q)}°`;
+    $(`j${id}volt`).textContent = isOnline ? `${(state?.v / 10).toFixed(1)} V` : "—";
+    $(`j${id}temp`).textContent = isOnline ? `${state?.temp?.[i] ?? "—"} °C` : "—";
+    $(`j${id}load`).textContent = isOnline ? `${state?.load?.[i] ?? "—"}` : "—";
+    $(`j${id}cur`).textContent = isOnline ? `${state?.cur?.[i] ?? "—"}` : "—";
+    const safe = safeRange(cal);
+    const touched = Boolean(cal && (cal.ref || cal.hasMin || cal.hasMax));
+    $(`j${id}safe`).textContent = safe
+      ? `safe raw ${safe.min}..${safe.max} · MIN/MAX ${limit?.minRaw ?? cal.minRaw}/${limit?.maxRaw ?? cal.maxRaw}`
+      : touched
+        ? `已标 ${cal.hasMin ? "MIN" : ""}${cal.hasMax ? "MAX" : ""}；还缺 ${!cal.hasMin ? "MIN" : ""}${!cal.hasMax ? " MAX" : ""}`
+        : "未标定";
+    $(`j${id}safe`).classList.toggle("cal", Boolean(safe));
   }
 
-  async function teardown() {
-    tearingDown = true;
-    stopPolling();
-    if (pending) {
-      clearTimeout(pending.timer);
-      pending = null;
-    }
-    try { if (bridge) bridge.close(); } catch {}
-    bridge = null;
-    try { if (reader) await reader.cancel(); } catch {}
-    try { if (reader) reader.releaseLock(); } catch {}
-    reader = null;
-    try { if (writer) writer.releaseLock(); } catch {}
-    writer = null;
-    try { if (port) await port.close(); } catch {}
-    port = null;
-    connected = false;
-    setConnState('未连接');
-    setPortInfo('未选择端口');
-    tearingDown = false;
+  $("currentJoint").textContent = `ID${selected}`;
+  $("currentJoint2").textContent = `ID${selected}`;
+  $("testJoint").textContent = `ID${selected}`;
+  const selectedCal = cals[selected - 1];
+  const selectedLimit = limits[selected - 1];
+  const selectedOnline = Boolean(online & (1 << (selected - 1)));
+  const selectedTorque = Boolean(torque & (1 << (selected - 1)));
+  const done = {
+    1: selectedOnline,
+    2: Boolean(selectedCal?.ref),
+    3: Boolean(selectedCal?.ref),
+    "3b": Boolean(selectedCal?.ref),
+    4: Boolean(selectedCal?.hasMin),
+    5: Boolean(selectedCal?.hasMax),
+    6: Boolean(selectedCal?.valid),
+    7: Boolean(selectedCal?.valid) && selectedTorque,
+  };
+  for (const row of document.querySelectorAll(".step-row[data-step]")) {
+    row.classList.toggle("done", Boolean(done[row.dataset.step]));
+    row.classList.toggle("active", row.dataset.step === "1" && !selectedOnline);
   }
+  const range = safeRange(selectedCal);
+  $("testSafe").textContent = range
+    ? `ID${selected} safe raw ${range.min}..${range.max}（MIN/MAX ${selectedLimit?.minRaw ?? selectedCal.minRaw}/${selectedLimit?.maxRaw ?? selectedCal.maxRaw}）`
+    : "标定/限位未就绪";
+  $("testSafe").classList.toggle("cal", Boolean(range));
 
-  async function disconnect() {
-    if (!connected) return;
-    await teardown();
-    appendLog('sys', '串口已断开');
-    updateButtons();
-    render();
-  }
+  $("fwInfo").textContent = hello
+    ? `${hello.fw} · protocol ${hello.protocol} · ${hello.features.join(", ")}`
+    : "—";
+  $("calInfo").textContent = calComplete(cals)
+    ? "3/3 有效"
+    : `${cals.filter((cal) => cal?.valid).length}/3 有效`;
+  $("torqueInfo").textContent = `${maskCount(torque)}/3`;
+  $("errInfo").textContent = lastErr ? errorLabel(lastErr.code) : "—";
 
-  async function actionTorqueOff() {
-    await run(async () => {
-      await sendAndWait(`TORQUE ${selected} OFF`, /^OK torque ID\d+ OFF|^ERR/);
-      torqueOff[selected] = true;
-      appendLog('sys', '已卸力：先扶住关节，再手移到安全端点');
-      await refreshAll();
-    });
-  }
-
-  async function actionTorqueOn() {
-    await run(async () => {
-      await sendAndWait(`TORQUE ${selected} ON`, /^OK torque ID\d+ ON|^ERR/);
-      torqueOff[selected] = false;
-      await refreshAll();
-    });
-  }
-
-  async function actionMark(kind) {
-    if (!torqueOff[selected]) {
-      appendLog('err', '先卸力，再标记端点');
-      return;
-    }
-    const j = joints[selected];
-    if (kind === 'MIN' && j.max !== null && j.pos !== null && j.pos > j.max) {
-      appendLog('err', `当前 raw ${j.pos} 比已标 MAX ${j.max} 大；MIN 应是较小的端点。先 CLEAR 再重标。`);
-      return;
-    }
-    if (kind === 'MAX' && j.min !== null && j.pos !== null && j.pos < j.min) {
-      appendLog('err', `当前 raw ${j.pos} 比已标 MIN ${j.min} 小；MAX 应是较大的端点。先 CLEAR 再重标；若行程跨 0/4095，不能简单交换。`);
-      return;
-    }
-    await run(async () => {
-      await sendAndWait(`MARK ${selected} ${kind}`, /^OK mark|^ERR/);
-      await refreshAll();
-    });
-  }
-
-  async function actionMove() {
-    const j = joints[selected];
-    if (!hasLimits(j)) return;
-    const target = Number(ui.target.value);
-    const speed = Number(ui.speed.value);
-    if (!Number.isInteger(target) || target < j.safeMin || target > j.safeMax) {
-      appendLog('err', `目标必须是 ${j.safeMin}..${j.safeMax} 内的整数`);
-      return;
-    }
-    if (!Number.isInteger(speed) || speed < 1 || speed > 600) {
-      appendLog('err', '速度必须是 1..600');
-      return;
-    }
-    await run(async () => {
-      await sendAndWait(`MOVE ${selected} ${target} ${speed}`, /^OK move|^ERR/, 4000);
-      await sleep(350);
-      await sendAndWait(`READ ${selected}`, /^ID\d+ pos=|^ERR/, 1800);
-    });
-  }
-
-  async function actionClear() {
-    if (!confirm(`清除 ID${selected} 的 MIN/MAX？换舵机或拆臂后才需要重标。`)) return;
-    await run(async () => {
-      await sendAndWait(`CLEAR ${selected}`, /^OK clear|^ERR/);
-      torqueOff[selected] = false;
-      await refreshAll();
-    });
-  }
-
-  async function manualCommand(cmd) {
-    const text = String(cmd || '').trim();
-    if (!text) return;
-    await run(async () => {
-      await sendRaw(text);
-      if (/^(MARK|TORQUE|MOVE|CLEAR)\b/i.test(text)) {
-        await sleep(500);
-        await refreshAll();
-      }
-    });
-  }
-
-  function selectJoint(id) {
-    selected = Number(id);
-    render();
-  }
-
-  function createMockPort() {
-    let ctrl = null;
-    const pos = { 1: 1500, 2: 1800, 3: 2100 };
-    const min = { 1: null, 2: null, 3: null };
-    const max = { 1: null, 2: null, 3: null };
-    const torque = { 1: true, 2: true, 3: true };
-    const emit = (text) => {
-      try { ctrl.enqueue(encoder.encode(text + '\n')); } catch {}
-    };
-    const safe = (id) => {
-      if (min[id] === null || max[id] === null) return null;
-      return [min[id] + 40, max[id] - 40];
-    };
-    const handle = (cmd) => {
-      const parts = cmd.trim().split(/\s+/);
-      const op = (parts[0] || '').toUpperCase();
-      const id = Number(parts[1]);
-      if (op === 'SCAN') {
-        emit('SCAN servo bus (ID 1..3):');
-        for (const n of [1, 2, 3]) emit(`  ID${n} pos=${pos[n]} v=12.0V t=31C load=0`);
-        emit('SCAN done: 3/3 online');
-      } else if (op === 'LIMITS') {
-        emit('LIMITS (raw encoder ticks, 0..4095):');
-        for (const n of [1, 2, 3]) {
-          const range = safe(n);
-          if (range) emit(`  ID${n} limits raw=${min[n]}..${max[n]} safe=${range[0]}..${range[1]}`);
-          else if (min[n] !== null) emit(`  ID${n} limits min=${min[n]}, MAX unset (MOVE disabled)`);
-          else if (max[n] !== null) emit(`  ID${n} limits MAX=${max[n]}, min unset (MOVE disabled)`);
-          else emit(`  ID${n} limits UNSET (MOVE disabled)`);
-        }
-        emit('OK limits');
-      } else if (op === 'READ') {
-        if (!pos[id]) emit('ERR 02 usage: READ <id 1..3>');
-        else emit(`ID${id} pos=${pos[id]} v=12.0V t=31C load=0`);
-      } else if (op === 'TORQUE') {
-        if (!pos[id] || !['ON', 'OFF'].includes((parts[2] || '').toUpperCase())) emit('ERR 02 usage: TORQUE <id> ON|OFF');
-        else {
-          torque[id] = parts[2].toUpperCase() === 'ON';
-          emit(`OK torque ID${id} ${torque[id] ? 'ON' : 'OFF'}`);
-        }
-      } else if (op === 'MARK') {
-        const which = (parts[2] || '').toUpperCase();
-        if (!pos[id] || !['MIN', 'MAX'].includes(which)) emit('ERR 02 usage: MARK <id> MIN|MAX');
-        else {
-          const nextMin = which === 'MIN' ? pos[id] : min[id];
-          const nextMax = which === 'MAX' ? pos[id] : max[id];
-          if (nextMin !== null && nextMax !== null && nextMax - nextMin <= 80) {
-            emit(`ERR 08 endpoints too close: raw ${nextMin}..${nextMax}, need > 80 ticks`);
-          } else {
-            if (which === 'MIN') min[id] = pos[id]; else max[id] = pos[id];
-            const range = safe(id);
-            emit(range
-              ? `OK mark ID${id} ${which} raw=${pos[id]} safe=${range[0]}..${range[1]}`
-              : `OK mark ID${id} ${which} raw=${pos[id]}; mark the other endpoint`);
-          }
-        }
-      } else if (op === 'CLEAR') {
-        min[id] = null; max[id] = null;
-        emit('OK clear limits');
-      } else if (op === 'MOVE') {
-        const target = Number(parts[2]);
-        const speed = Number(parts[3] || 250);
-        const range = safe(id);
-        if (!range) emit('ERR 09 uncalibrated; use MARK <id> MIN and MARK <id> MAX first');
-        else if (!Number.isInteger(target) || target < range[0] || target > range[1]) emit(`ERR 10 target ${target} outside safe ${range[0]}..${range[1]}`);
-        else if (!Number.isInteger(speed) || speed < 1 || speed > 600) emit('ERR 03 range: speed 1..600');
-        else {
-          const from = pos[id];
-          pos[id] = target;
-          emit(`OK move id=${id} from=${from} pos=${target} speed=${speed} safe=${range[0]}..${range[1]}`);
-        }
-      } else if (op === 'MOCKPOS') {
-        // mock-only test hook: simulate moving the joint by hand
-        const target = Number(parts[2]);
-        if (pos[id] && Number.isInteger(target)) {
-          pos[id] = target;
-          emit(`OK mockpos ID${id} pos=${target}`);
-        } else {
-          emit('ERR 02 usage: MOCKPOS <id> <pos>');
-        }
-      } else if (op === 'HELP') {
-        emit('Commands: SCAN READ LIMITS MARK TORQUE CLEAR MOVE HELP');
-        emit('OK help');
-      } else {
-        emit('ERR 01 unknown command; send HELP');
-      }
-    };
-    const readable = new ReadableStream({
-      start(controller) { ctrl = controller; },
-    });
-    const writable = new WritableStream({
-      write(chunk) {
-        const text = decoder.decode(chunk);
-        for (const line of text.split('\n')) {
-          if (line.trim()) setTimeout(() => handle(line), 30);
-        }
-      },
-    });
-    return {
-      readable,
-      writable,
-      async open() {},
-      async close() { try { ctrl.close(); } catch {} },
-      getInfo() { return { usbVendorId: 0x10c4 }; },
-    };
-  }
-
-  ui.connectBtn.addEventListener('click', connect);
-  ui.disconnectBtn.addEventListener('click', disconnect);
-  ui.joints.addEventListener('click', (event) => {
-    const card = event.target.closest('.joint-card');
-    if (card) selectJoint(card.dataset.id);
-  });
-  ui.torqueOffBtn.addEventListener('click', actionTorqueOff);
-  ui.torqueOnBtn.addEventListener('click', actionTorqueOn);
-  ui.markMinBtn.addEventListener('click', () => actionMark('MIN'));
-  ui.markMaxBtn.addEventListener('click', () => actionMark('MAX'));
-  ui.moveBtn.addEventListener('click', actionMove);
-  ui.refreshBtn.addEventListener('click', () => run(refreshAll));
-  ui.clearBtn.addEventListener('click', actionClear);
-  ui.liveRead.addEventListener('change', () => {
-    if (ui.liveRead.checked) startPolling();
-    else stopPolling();
-  });
-  ui.clearLog.addEventListener('click', () => { ui.log.textContent = ''; });
-  ui.sendForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const cmd = ui.cmd.value;
-    ui.cmd.value = '';
-    manualCommand(cmd);
-  });
-  document.querySelectorAll('[data-cmd]').forEach((button) => {
-    button.addEventListener('click', () => manualCommand(button.dataset.cmd));
-  });
-  window.addEventListener('pagehide', () => { teardown(); });
-
-  if (!canUse) {
-    showNotice(ui.support, '页面必须从 localhost 打开（双击 start-servo-console.bat）。连接优先走本机串口桥；桥不可用时才回退 Web Serial。');
-  } else if (mock) {
-    showNotice(ui.hint, '模拟模式：界面和命令流可以测试，但不会连接真实舵机。地址加 ?mock=1 可复现。');
+  const outside = [0, 1, 2]
+    .filter((index) => cals[index]?.valid && !rawInsideSafe(index))
+    .map((index) => `ID${index + 1}`);
+  const rangeWarn = $("rangeWarn");
+  if (outside.length) {
+    rangeWarn.hidden = false;
+    rangeWarn.textContent = `${outside.join("、")} 的当前 raw 在 safe 区间外。先扶住手臂，手动移回安全区，再做 TORQUE ON / 端点测试；固件会拒绝超出 safe 的目标。`;
   } else {
-    showNotice(ui.hint, `第一次连接先确认 12V 5A 已打开；连接会自动使用本机串口桥${supportsSerial ? '，桥不可用时回退 Web Serial' : ''}。TORQUE OFF 前必须扶住手臂。`);
+    rangeWarn.hidden = true;
   }
+
+  const s1 = $("s1state");
+  s1.textContent = (online & (1 << (selected - 1))) ? "在线" : "离线";
+  s1.className = `step-state ${online & (1 << (selected - 1)) ? "done" : ""}`;
+  $("refQ").disabled = !connected || busy;
+  $("dirSign").disabled = !connected || busy;
+  updateButtons();
+}
+
+function updateButtons() {
+  const enabled = connected && !busy;
+  $("connectBtn").disabled = connected || busy;
+  $("disconnectBtn").disabled = !connected || busy;
+  for (const id of ["torqueOffBtn", "calSaveBtn", "calClearBtn", "readCalBtn", "readLimitsBtn", "refreshBtn", "stopBtn", "estopBtn", "clearBtn"]) {
+    const el = $(id);
+    if (el) el.disabled = !enabled;
+  }
+  const torqueOnSelected = Boolean(lastState?.torque & (1 << (selected - 1)));
+  for (const id of ["calRefBtn", "calDirBtn", "markMinBtn", "markMaxBtn"]) {
+    const el = $(id);
+    if (el) el.disabled = !enabled || torqueOnSelected;
+  }
+  const canTorqueOn = enabled && calComplete(cals) && lastState?.mode !== "CAL" && allInsideSafe();
+  $("torqueOnBtn").disabled = !canTorqueOn;
+  const state = lastState;
+  const canTest = enabled && calComplete(cals) &&
+    state?.online === 7 && state?.torque === 7 && allInsideSafe() &&
+    state?.mode !== "CAL" && state?.mode !== "FAULT" && state?.mode !== "ESTOP" &&
+    Boolean(safeRange(cals[selected - 1])) &&
+    !testTimer;
+  $("testMinBtn").disabled = !canTest;
+  $("testMaxBtn").disabled = !canTest;
+  $("testStopBtn").disabled = !testTimer;
+  $("cmd").disabled = !enabled;
+  $("sendBtn").disabled = !enabled;
+}
+
+function selectJoint(id) {
+  selected = Math.max(1, Math.min(3, id));
+  setWizard(`已选 ID${selected}。先确认在线，再卸力、记录参考姿态、方向、MIN/MAX。`);
   render();
-})();
+}
+
+async function run(action) {
+  if (busy || !connected) return;
+  busy = true;
+  updateButtons();
+  try {
+    await action();
+  } catch (error) {
+    appendLog("err", error.message ?? String(error));
+    setWizard(`操作失败：${error.message ?? error}`);
+  } finally {
+    busy = false;
+    render();
+    updateButtons();
+  }
+}
+
+async function doTorqueOff() {
+  await run(async () => {
+    await request(torqueCommand(selected, false), (p) => p.verb === "OK" && p.fields.torque === "off");
+    await refreshAll();
+    setWizard(`ID${selected} 已卸力。扶住手臂，移动到参考姿态，填 q 后点 CAL REF。`);
+  });
+}
+
+async function doCalRef() {
+  await run(async () => {
+    const q = Number($("refQ").value);
+    if (!Number.isFinite(q)) throw new Error("参考姿态 q 必须是数字");
+    await request(calRefCommand(selected, q), (p) => isOk(p, "cal_ref"));
+    await collectCal();
+    setWizard(`ID${selected} 参考姿态已记录（q=${formatQ(q)}）。选方向后点 CAL DIR。`);
+  });
+}
+
+async function doCalDir() {
+  await run(async () => {
+    const sign = Number($("dirSign").value);
+    await request(calDirCommand(selected, sign), (p) => isOk(p, "cal_dir"));
+    await collectCal();
+    setWizard(`ID${selected} 方向已设为 ${sign > 0 ? "+1" : "-1"}。现在移到 raw 较小端点，点 MARK MIN。`);
+  });
+}
+
+async function doMark(which) {
+  await run(async () => {
+    await request(calMarkCommand(selected, which), (p) => p.verb === "OK" && (p.args[0] === "cal_min" || p.args[0] === "cal_max"));
+    await collectCal();
+    await collectLimits();
+    setWizard(`ID${selected} 已记录 ${which}。${which === "MIN" ? "再移到 raw 较大端点，点 MARK MAX。" : "检查安全区和 valid，再 CAL SAVE。"}`);
+  });
+}
+
+async function doCalSave() {
+  await run(async () => {
+    await request(commands.calSave, (p) => isOk(p, "cal_saved"));
+    await refreshAll();
+    setWizard(calComplete(cals) ? "标定已保存，三关节有效；现在可以 TORQUE ON。" : "标定已保存，但还有关节未完整；继续标定其他关节。");
+  });
+}
+
+async function doCalClear() {
+  if (!confirm("清除全部标定？这会让固件进入未标定状态，POSE 会被拒绝。")) return;
+  await run(async () => {
+    await request(calClearCommand(0), (p) => isOk(p, "cal_cleared"));
+    await refreshAll();
+    setWizard("标定已清除；需要重新标定三个关节。");
+  });
+}
+
+async function doTorqueOn() {
+  await run(async () => {
+    if (!allInsideSafe()) {
+      throw new Error("有关节当前 raw 在 safe 外；先手动移回安全区再上力");
+    }
+    await request(commands.torqueAllOn, (p) => p.verb === "OK" && p.fields.torque === "on");
+    await refreshAll();
+    setWizard("三关节已上力。先做低速端点测试，确认不撞、不夹线、不超温。");
+  });
+}
+
+async function doStop() {
+  if (testTimer) stopTest("已停止");
+  await run(async () => {
+    await request(commands.stop, (p) => isOk(p, "stop"));
+    await refreshAll();
+    setWizard("已 STOP；保持最后目标。");
+  });
+}
+
+async function doEstop() {
+  if (testTimer) stopTest();
+  await run(async () => {
+    await request(commands.estop, (p) => isOk(p, "estop"));
+    await refreshAll();
+    setWizard("已 ESTOP（锁存）。检查现场后点 CLEAR。");
+  });
+}
+
+async function doClear() {
+  await run(async () => {
+    await request(commands.clear, (p) => isOk(p, "clear") || isOk(p, "cleared"));
+    await refreshAll();
+    setWizard("已 CLEAR；若仍有离线舵机，POSE 仍会被拒绝。");
+  });
+}
+
+function startTest(which) {
+  if (testTimer) return;
+  const state = lastState;
+  const cal = cals[selected - 1];
+  const range = safeRange(cal);
+  if (!state || !calComplete(cals) || state.online !== 7 || state.torque !== 7 || !range) {
+    setTestMsg("需要三关节在线、标定完整、扭矩 ON，才能做端点测试。");
+    return;
+  }
+  if (state.mode === "CAL" || state.mode === "FAULT" || state.mode === "ESTOP") {
+    setTestMsg(`当前模式 ${state.mode}，不能 POSE。先保存标定 / CLEAR。`);
+    return;
+  }
+  const targetRaw = which === "MIN" ? range.min : range.max;
+  if (!confirm(`ID${selected} 将以 10°/s 移到 safe ${which}（raw ${targetRaw}）。先扶住手臂，随时 STOP。继续？`)) return;
+  lastErr = null;
+  testTarget = { index: selected - 1, raw: targetRaw, which };
+  testNear = 0;
+  testDeadline = Date.now() + 15000;
+  setTestMsg(`ID${selected} 向 safe ${which}（raw ${targetRaw}）低速移动...`);
+  testTimer = setInterval(testTick, 50);
+  updateButtons();
+}
+
+function testTick() {
+  if (!connected || !lastState || !testTarget) {
+    stopTest("连接/状态丢失");
+    return;
+  }
+  if (Date.now() > testDeadline) {
+    stopTest("超时，已 STOP");
+    return;
+  }
+  if (lastErr?.code) {
+    stopTest(`固件错误 ${lastErr.code}，已 STOP`);
+    return;
+  }
+  const q = endpointPose(lastState, cals, testTarget.index, testTarget.raw);
+  if (!q) {
+    stopTest("无法构造目标 q，已 STOP");
+    return;
+  }
+  try {
+    sendRaw(poseCommand(seq++, q, 10, 20), false);
+  } catch (error) {
+    stopTest(`发送失败：${error.message}`);
+    return;
+  }
+  const raw = lastState.raw?.[testTarget.index];
+  if (Number.isFinite(raw) && Math.abs(raw - testTarget.raw) <= 8) {
+    testNear++;
+  } else {
+    testNear = 0;
+  }
+  if (testNear >= 3) {
+    stopTest(`ID${testTarget.index + 1} 已到 raw ${raw}，已 STOP`);
+  }
+}
+
+function stopTest(message = "") {
+  if (testTimer) {
+    clearInterval(testTimer);
+    testTimer = null;
+  }
+  testTarget = null;
+  testNear = 0;
+  if (connected) {
+    try { sendRaw(commands.stop); } catch {}
+  }
+  if (message) setTestMsg(message);
+  updateButtons();
+}
+
+async function doRefresh() {
+  await run(async () => {
+    await refreshAll();
+    setWizard("状态、标定、限位已刷新。");
+  });
+}
+
+function bind() {
+  for (const card of document.querySelectorAll(".joint-card")) {
+    card.addEventListener("click", () => selectJoint(Number(card.dataset.id)));
+  }
+  $("connectBtn").addEventListener("click", connect);
+  $("disconnectBtn").addEventListener("click", () => disconnect(true));
+  $("torqueOffBtn").addEventListener("click", doTorqueOff);
+  $("calRefBtn").addEventListener("click", doCalRef);
+  $("calDirBtn").addEventListener("click", doCalDir);
+  $("markMinBtn").addEventListener("click", () => doMark("MIN"));
+  $("markMaxBtn").addEventListener("click", () => doMark("MAX"));
+  $("calSaveBtn").addEventListener("click", doCalSave);
+  $("calClearBtn")?.addEventListener("click", doCalClear);
+  $("torqueOnBtn").addEventListener("click", doTorqueOn);
+  $("refreshBtn").addEventListener("click", doRefresh);
+  $("readCalBtn").addEventListener("click", () => run(collectCal));
+  $("readLimitsBtn").addEventListener("click", () => run(collectLimits));
+  $("stopBtn").addEventListener("click", doStop);
+  $("estopBtn").addEventListener("click", doEstop);
+  $("clearBtn").addEventListener("click", doClear);
+  $("testMinBtn").addEventListener("click", () => startTest("MIN"));
+  $("testMaxBtn").addEventListener("click", () => startTest("MAX"));
+  $("testStopBtn").addEventListener("click", () => stopTest("已停止端点测试"));
+  $("clearLog").addEventListener("click", () => { logLines = []; renderLog(); });
+  $("sendForm").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const command = $("cmd").value.trim();
+    if (!command || !connected) return;
+    try { sendRaw(command); } catch (error) { appendLog("err", error.message); }
+    $("cmd").value = "";
+  });
+  for (const chip of document.querySelectorAll(".chip[data-cmd]")) {
+    chip.addEventListener("click", () => {
+      if (!connected) return;
+      try { sendRaw(chip.dataset.cmd); } catch (error) { appendLog("err", error.message); }
+    });
+  }
+  window.addEventListener("beforeunload", () => { try { transport?.close(); } catch {} });
+}
+
+class MockLink {
+  constructor(emit) {
+    this.emit = emit;
+    this.stream = false;
+    this.state = {
+      mode: "UNCAL",
+      online: 7,
+      torque: 0,
+      err: 0,
+      raw: [2048, 2048, 2048],
+      target: [null, null, null],
+      load: [100, 100, 100],
+      cur: [20, 20, 20],
+      temp: [27, 27, 27],
+      v: 120,
+      lastPose: 0,
+    };
+    this.cals = [1, 2, 3].map((id) => ({
+      id,
+      ref: 0,
+      hasMin: 0,
+      hasMax: 0,
+      zeroRaw: 2048,
+      zeroQ: 0,
+      sign: 1,
+      minRaw: 0,
+      maxRaw: 4095,
+      margin: 40,
+      valid: false,
+    }));
+    this.timer = setInterval(() => this.tick(), 100);
+  }
+
+  close() { clearInterval(this.timer); }
+
+  write(text) {
+    for (const line of String(text).split(/\r?\n/)) {
+      if (line.trim()) this.handle(line.trim());
+    }
+  }
+
+  emitLine(line) { this.emit(`${line}\n`); }
+
+  calMask() {
+    return this.cals.reduce((mask, cal, i) => mask | (cal.valid ? 1 << i : 0), 0);
+  }
+
+  emitState() {
+    const q = this.cals.map((cal, i) => (cal.valid ? rawToQ(cal, this.state.raw[i]) : 0));
+    this.emitLine(
+      `STATE seq=1 mode=${this.state.mode} online=7 cal=${this.calMask()} torque=${this.state.torque} ` +
+      `err=${this.state.err} age=0 q=${q.map((v) => formatQ(v)).join(",")} ` +
+      `raw=${this.state.raw.join(",")} load=${this.state.load.join(",")} ` +
+      `cur=${this.state.cur.join(",")} v=${this.state.v} t=${this.state.temp.join(",")}`
+    );
+  }
+
+  ok(args) { this.emitLine(`OK ${args}`); }
+  err(code, joint = 0) { this.state.err = code; this.emitLine(`ERR code=${code} seq=0 joint=${joint} msg=${ERROR_LABELS[code] ?? "error"}`); }
+
+  validCal(cal) {
+    return Boolean(cal.ref && cal.hasMin && cal.hasMax && cal.maxRaw - cal.minRaw > 2 * cal.margin &&
+      cal.zeroRaw >= cal.minRaw + cal.margin && cal.zeroRaw <= cal.maxRaw - cal.margin);
+  }
+
+  tick() {
+    const now = Date.now();
+    for (let i = 0; i < 3; i++) {
+      const target = this.state.target[i];
+      if (target === null) continue;
+      const delta = target - this.state.raw[i];
+      if (Math.abs(delta) <= 4) {
+        this.state.raw[i] = target;
+        this.state.target[i] = null;
+      } else {
+        this.state.raw[i] += Math.sign(delta) * 8;
+      }
+    }
+    if (this.state.mode === "MOTION" && now - this.state.lastPose > 300) {
+      this.state.mode = "READY";
+      this.state.err = 17;
+      this.err(17);
+    }
+    if (this.stream || this.state.mode === "MOTION") this.emitState();
+  }
+
+  handle(line) {
+    const p = parseLine(line);
+    if (!p) return;
+    const args = p.args;
+    if (p.verb === "HELLO") {
+      this.emitLine("HELLO protocol=1 fw=0.1.0-mock cal=1 features=state,stream,motion,cal,limits");
+    } else if (p.verb === "STATE") {
+      this.emitState();
+    } else if (p.verb === "STREAM") {
+      this.stream = args[0]?.toUpperCase() === "ON";
+      this.ok(`stream=${this.stream ? "on" : "off"}`);
+    } else if (p.verb === "TORQUE") {
+      const id = args[0] === "all" ? 0 : Number(args[0]);
+      const on = args[1]?.toUpperCase() === "ON";
+      if (this.state.mode === "ESTOP" || (on && (this.state.mode === "FAULT" || this.state.mode === "CAL"))) {
+        this.err(11, id);
+        return;
+      }
+      const bit = id === 0 ? 7 : 1 << (id - 1);
+      if (on) this.state.torque |= bit; else this.state.torque &= ~bit;
+      if (!on && this.state.mode === "MOTION") this.state.mode = "READY";
+      this.ok(`torque=${on ? "on" : "off"}`);
+      this.emitState();
+    } else if (p.verb === "CAL") {
+      this.handleCal(args);
+    } else if (p.verb === "LIMITS") {
+      for (const cal of this.cals) {
+        const safe = safeRange(cal) ?? { min: 0, max: 0 };
+        this.emitLine(
+          `LIMITS id=${cal.id} min=${cal.minRaw} max=${cal.maxRaw} ` +
+          `safe=${safe.min}..${safe.max} valid=${cal.valid ? 1 : 0}`
+        );
+      }
+      this.ok("limits");
+    } else if (p.verb === "POSE") {
+      this.handlePose(p);
+    } else if (p.verb === "STOP") {
+      if (this.state.mode === "FAULT" || this.state.mode === "ESTOP") {
+        this.err(11);
+        return;
+      }
+      this.state.mode = "READY";
+      this.state.target = [null, null, null];
+      this.ok("stop");
+      this.emitState();
+    } else if (p.verb === "ESTOP") {
+      this.state.mode = "ESTOP";
+      this.state.target = [null, null, null];
+      this.ok("estop");
+      this.emitState();
+    } else if (p.verb === "CLEAR") {
+      if (this.state.mode === "FAULT" || this.state.mode === "ESTOP") {
+        this.state.mode = this.calMask() === 7 ? "READY" : "UNCAL";
+        this.state.err = 0;
+        this.ok("cleared");
+      } else {
+        this.ok("clear");
+      }
+      this.emitState();
+    } else {
+      this.err(1);
+    }
+  }
+
+  handleCal(args) {
+    const sub = args[0]?.toUpperCase();
+    const id = Number(args[1]);
+    if (sub === "STATUS") {
+      for (const cal of this.cals) {
+        this.emitLine(
+          `CAL id=${cal.id} ref=${cal.ref} min_set=${cal.hasMin} max_set=${cal.hasMax} ` +
+          `zero_raw=${cal.zeroRaw} zero_q=${formatQ(cal.zeroQ)} sign=${cal.sign} ` +
+          `min=${cal.minRaw} max=${cal.maxRaw} margin=${cal.margin} valid=${cal.valid ? 1 : 0}`
+        );
+      }
+      this.ok("cal");
+      return;
+    }
+    if (sub === "SAVE") {
+      if (this.state.mode === "MOTION" || this.state.mode === "FAULT" || this.state.mode === "ESTOP") {
+        this.err(11);
+        return;
+      }
+      for (const cal of this.cals) cal.valid = this.validCal(cal);
+      this.state.mode = this.calMask() === 7 ? "READY" : "UNCAL";
+      if (this.calMask() === 7) this.state.raw = [2048, 2048, 2048];
+      this.ok("cal_saved");
+      this.emitState();
+      return;
+    }
+    if (sub === "CLEAR") {
+      if (this.state.mode === "MOTION" || this.state.mode === "FAULT" || this.state.mode === "ESTOP") {
+        this.err(11);
+        return;
+      }
+      const targets = args[1] === "all" ? this.cals : this.cals.filter((cal) => cal.id === id);
+      for (const cal of targets) {
+        Object.assign(cal, { ref: 0, hasMin: 0, hasMax: 0, minRaw: 0, maxRaw: 4095, valid: false });
+      }
+      this.state.mode = this.calMask() === 7 ? "READY" : "UNCAL";
+      this.ok("cal_cleared");
+      this.emitState();
+      return;
+    }
+    if (!id || id < 1 || id > 3) {
+      this.err(2);
+      return;
+    }
+    const cal = this.cals[id - 1];
+    const bit = 1 << (id - 1);
+    if (this.state.torque & bit) {
+      this.err(11, id);
+      return;
+    }
+    if (sub === "REF") {
+      cal.zeroRaw = this.state.raw[id - 1];
+      cal.zeroQ = Number(args[2]) || 0;
+      cal.ref = 1;
+      this.state.mode = "CAL";
+      this.ok("cal_ref");
+      this.emitState();
+    } else if (sub === "DIR") {
+      cal.sign = args[2] === "-1" ? -1 : 1;
+      this.state.mode = "CAL";
+      this.ok("cal_dir");
+      this.emitState();
+    } else if (sub === "MARK") {
+      const raw = args[2]?.toUpperCase() === "MIN" ? 1300 : 2300;
+      this.state.raw[id - 1] = raw;
+      if (args[2]?.toUpperCase() === "MIN") {
+        cal.minRaw = raw;
+        cal.hasMin = 1;
+      } else {
+        cal.maxRaw = raw;
+        cal.hasMax = 1;
+      }
+      this.state.mode = "CAL";
+      this.ok(args[2]?.toUpperCase() === "MIN" ? "cal_min" : "cal_max");
+      this.emitState();
+    } else {
+      this.err(1);
+    }
+  }
+
+  handlePose(p) {
+    if (this.state.mode === "CAL" || this.state.mode === "FAULT" || this.state.mode === "ESTOP") {
+      this.err(11);
+      return;
+    }
+    if (this.calMask() !== 7 || this.state.torque !== 7) {
+      this.err(9);
+      return;
+    }
+    const q = String(p.fields.q ?? "").split(",").map(Number);
+    if (q.length !== 3 || q.some((v) => !Number.isFinite(v))) {
+      this.err(2);
+      return;
+    }
+    const target = [];
+    for (let i = 0; i < 3; i++) {
+      const raw = Math.round(this.cals[i].zeroRaw + this.cals[i].sign * (q[i] - this.cals[i].zeroQ) * (4096 / 360));
+      const safe = safeRange(this.cals[i]);
+      if (!safe || raw < safe.min || raw > safe.max) {
+        this.err(10, i + 1);
+        return;
+      }
+      target.push(raw);
+    }
+    this.state.target = target;
+    this.state.mode = "MOTION";
+    this.state.lastPose = Date.now();
+    this.state.err = 0;
+  }
+}
+
+bind();
+if (mock) {
+  $("mockBadge").hidden = false;
+  appendLog("sys", "模拟模式：?mock=1，不连硬件");
+  if (autoConnect) setTimeout(connect, 250);
+}
+render();

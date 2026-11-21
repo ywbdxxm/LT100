@@ -13,7 +13,9 @@ resources/
 flashing-report/
 
 # firmware / build output
-build/
+/build/
+/platform/tests/host/build/
+/examples/*/build/
 .pio/
 .pioenvs/
 .piolibdeps/

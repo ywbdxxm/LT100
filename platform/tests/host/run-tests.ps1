@@ -10,7 +10,7 @@ if (-not (Test-Path $vcvars)) {
     throw "vcvars64.bat not found: $vcvars"
 }
 
-$sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\firmware\lt100_core\src')).Path
+$sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\libraries\lt100_core\src')).Path
 $buildDir = Join-Path $PSScriptRoot 'build'
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 

@@ -247,10 +247,6 @@ void handleLine(char *line) {
     }
     return;
   }
-  if (ieq(p, "SERVO")) {
-    reply("ERR 04 servo not enabled");
-    return;
-  }
   reply("ERR 01 unknown command");
 }
 

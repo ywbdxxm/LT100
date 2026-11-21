@@ -22,7 +22,7 @@
     <a href="#oled">屏幕</a>
     <a href="#serial">串口</a>
     <a href="#servo">舵机</a>
-    <a href="servo.html">标定台</a>
+    <a href="servo.html">标定/检测</a>
     <a href="serial.html" class="nav-cta">串口控制台</a>
   </div>
 </nav>
@@ -258,7 +258,7 @@
               </ul>
             </li>
             <li><span class="file">start-web-console.bat</span><span class="what">启动网页串口控制台（localhost）</span></li>
-            <li><span class="file">start-servo-console.bat</span><span class="what">启动网页舵机标定台（localhost）</span></li>
+            <li><span class="file">start-servo-console.bat</span><span class="what">启动网页标定/检测台（localhost）</span></li>
             <li><span class="dir">examples/</span>
               <ul>
                 <li><span class="dir">01_blink_rgb/</span><span class="what">第一个例程：板载 RGB 闪烁</span>
@@ -296,14 +296,14 @@
                     <li><span class="file">07_oled_cube.ino</span><span class="what">U8g2 线框立方体 + 透视旋转</span></li>
                   </ul>
                 </li>
-                <li><span class="dir">08_serial_console/</span><span class="what">串口：电脑控制台</span>
+                <li><span class="dir">08_serial_console/</span><span class="what">串口：灯 / OLED / 板子状态，不接舵机</span>
                   <ul>
                     <li><span class="file">08_serial_console.ino</span><span class="what">UART0 命令解析 + OLED 三行 + 灯环/RX/TX</span></li>
                   </ul>
                 </li>
-                <li><span class="dir">09_servo_basic/</span><span class="what">舵机：读位置、标定限位、再动</span>
+                <li><span class="dir">09_servo_basic/</span><span class="what">舵机：公版标定/检测台</span>
                   <ul>
-                    <li><span class="file">09_servo_basic.ino</span><span class="what">SMS_STS + NVS 限位 + 安全区 MOVE</span></li>
+                    <li><span class="file">09_servo_basic.ino</span><span class="what">LT100Core + LT100Board；CAL、限位、扭矩、失联保护</span></li>
                   </ul>
                 </li>
               </ul>
@@ -319,17 +319,18 @@
             <li><span class="dir">tools/</span>
               <ul>
                 <li><span class="file">serial-console.ps1</span><span class="what">串口控制台（PowerShell，免 Python）</span></li>
-                <li><span class="file">web-console.ps1</span><span class="what">本地静态服务器，给串口/舵机页面提供 localhost</span></li>
+                <li><span class="file">web-console.ps1</span><span class="what">本地静态服务器 + 可选串口桥</span></li>
               </ul>
             </li>
             <li><span class="dir">web/</span>
               <ul>
-                <li><span class="file">serial.html</span><span class="what">网页串口控制台（Web Serial）</span></li>
+                <li><span class="file">serial.html</span><span class="what">网页串口控制台（本机桥优先，Web Serial 回退）</span></li>
                 <li><span class="file">serial.css</span><span class="what">控制台样式</span></li>
-                <li><span class="file">serial.js</span><span class="what">Web Serial 连接、命令和遥测</span></li>
-                <li><span class="file">servo.html</span><span class="what">舵机标定台：扫描、卸力、MIN/MAX、MOVE</span></li>
+                <li><span class="file">serial.js</span><span class="what">桥/串口连接、命令和遥测</span></li>
+                <li><span class="file">servo.html</span><span class="what">公版标定/检测台：三关节状态、CAL、端点测试</span></li>
                 <li><span class="file">servo.css</span><span class="what">标定台布局与关节卡片</span></li>
-                <li><span class="file">servo.js</span><span class="what">09 协议、限位流程、mock 模式</span></li>
+                <li><span class="file">servo.js</span><span class="what">LT100P/1 标定流程、检测、mock 模式</span></li>
+                <li><span class="file">lt100-protocol.mjs</span><span class="what">纯协议解析 / raw↔q / 命令构造（可 node --test）</span></li>
                 <li><span class="dir">assets/</span>
                   <ul>
                     <li><span class="file">board-*.jpg</span><span class="what">官网产品图，本页配图</span></li>
@@ -985,9 +986,8 @@
         <tr><td><code>TEXT &lt;ascii&gt;</code></td><td>OLED 显示文字，5 秒</td><td><code>OK text=HELLO</code></td></tr>
         <tr><td><code>CLEAR</code></td><td>清除文字</td><td><code>OK text cleared</code></td></tr>
         <tr><td><code>STREAM 0 / 1</code></td><td>每秒自动发 STAT</td><td><code>OK stream=1</code></td></tr>
-        <tr><td><code>SERVO ...</code></td><td>预留，后续接舵机</td><td><code>ERR 04 servo not enabled</code></td></tr>
       </table>
-      <p class="sub" style="margin:6px 0 0">命令大小写不敏感，单行最长 96 字节。错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>04</code> 未启用 · <code>05</code> 行太长。</p>
+      <p class="sub" style="margin:6px 0 0">命令大小写不敏感，单行最长 96 字节。错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>04</code> 未启用 · <code>05</code> 行太长。<b>08 不接舵机</b>：舵机标定与检测走下面的 09 + 标定台。</p>
       <pre style="margin-top:12px"><code>&gt; PING
 PONG 12345
 &gt; COLOR FF6600
@@ -999,7 +999,7 @@ OK color=#FF6600
     </div>
 
     <div class="note">
-      <b>网页控制台：</b>不用串口工具，也不用 Python。双击 <code>start-web-console.bat</code>，浏览器会打开 <code>http://127.0.0.1:8773/web/serial.html</code>；点「连接串口」选 CP210x 就能用。需要 Chrome / Edge（或 Firefox 151+），不能直接双击 HTML。<a href="serial.html">打开控制台 →</a>
+      <b>网页控制台：</b>不用串口工具，也不用 Python。双击 <code>start-web-console.bat</code>，它会启动本机串口桥并打开 <code>http://127.0.0.1:8773/web/serial.html</code>；点「连接串口」自动走桥，桥不可用时才回退 Web Serial。不能直接双击 HTML。<a href="serial.html">打开控制台 →</a>
     </div>
 
     <div class="two">
@@ -1046,8 +1046,8 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
     <div class="box" style="margin-top:12px">
       <h3>后面还能接什么</h3>
       <ul class="plain">
-        <li><b>舵机</b>：UART1 已经接 ST3215，<a href="#servo">09_servo_basic</a> 已实现读位置、逐关节标定限位和受区间保护的 <code>MOVE</code>；下一步把 <code>SERVO</code> 命令并进 08 串口控制台。</li>
-        <li><b>Web Serial</b>：Chrome / Edge（以及 2026 年加入的 Firefox 151）可以让网页直接连 COM 口，做颜色滑杆和实时曲线；页面需要 localhost 或 HTTPS。</li>
+        <li><b>舵机</b>：UART1 已经接 ST3215，<a href="#servo">09_servo_basic</a> 已迁到公版 <code>LT100Core</code>：标定、限位、扭矩、离线保护都在固件里，网页标定/检测台走 <code>LT100P/1</code>。08 串口控制台只负责灯、OLED 和板子状态，不接舵机。</li>
+        <li><b>Web Serial / 本机桥</b>：Chrome / Edge（以及 2026 年加入的 Firefox 151）可以让网页直接连 COM 口；LT100 现在优先用本机 WebSocket 串口桥，桥不可用才回退 Web Serial。页面需要 localhost 或 HTTPS。</li>
         <li><b>PC 帧流</b>：电脑把 128×32 黑白画面按 512 字节一帧推过来，OLED 当第二屏，灯环跟着画面变色；921600 波特率下能跑到约 30 fps。</li>
         <li><b>PC 系统监控 / 音频频谱</b>：电脑算 CPU、内存或 FFT，只把结果用 JSON 或小二进制包发过来，板子负责显示和发光。</li>
       </ul>
@@ -1063,7 +1063,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
     </div>
 
     <div class="note">
-      <b>网页标定台：</b>不用串口助手，浏览器直接连 <code>09_servo_basic</code>，点按钮完成「卸力 → MARK MIN → MARK MAX → 上力 → 安全区内 MOVE」。<a href="servo.html">打开标定台 →</a>；也可以双击 <code>start-servo-console.bat</code>。需要 Chrome / Edge（或 Firefox 151+）。
+      <b>网页标定/检测台：</b>烧录公版 <code>09_servo_basic</code>，双击 <code>start-servo-console.bat</code>，浏览器通过本机桥连板子：三关节实时 raw/q/电压/温度/负载/电流、在线/标定/扭矩/故障、标定向导和低速端点测试都在一页。<a href="servo.html">打开标定台 →</a>；08 串口控制台不接舵机。
     </div>
 
     <div class="servo-intro">
@@ -1202,7 +1202,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
         </g>
         <line x1="410" y1="52" x2="410" y2="196" stroke="#b23c07" stroke-width="1" stroke-dasharray="4 4"></line>
         <text x="410" y="238" text-anchor="middle" font-size="10.5" fill="#b23c07">2048 只是编码器中点，不一定是臂的中位</text>
-        <text x="34" y="238" font-size="10.5" fill="#5f5952">端点向内留 40 格（约 3.5°）余量，再限制 MOVE。</text>
+        <text x="34" y="238" font-size="10.5" fill="#5f5952">端点向内留 40 格（约 3.5°）余量，再允许 POSE。</text>
       </svg>
       <figcaption>每台机器、每个关节单独标定 MIN / MAX；不要抄别人的数字，也不要把 2048 当默认中位。</figcaption>
     </figure>
@@ -1211,15 +1211,15 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
       <div class="box">
         <h3>四道防线</h3>
         <ol class="plain">
-          <li><b>机械硬限位：</b>结构上做限位块或拉杆，让手臂在物理上碰不到灯罩、底座和彼此。软件挂了也还有它。</li>
-          <li><b>每关节软件限位：</b>装配时标定 MIN / MAX，存进 NVS；目标超出就拒绝，不靠“应该没事”。</li>
-          <li><b>速度与加速度：</b>慢速起步、慢速停止，别让灯头甩起来；本课 MOVE 限速 600。</li>
-          <li><b>堵转 / 电流 / 温度：</b>负载异常时停机或卸力；这是下一阶段要补的保护。</li>
+          <li><b>机械硬限位（改进项目，当前没有）：</b>结构上做限位块或拉杆，让手臂在物理上碰不到灯罩、底座和彼此；做完之前，软件标定就是唯一保护。</li>
+          <li><b>每关节软件限位：</b>装配时标定 raw MIN / MAX，存进 NVS；目标超出 safe 区间就拒绝，不靠“应该没事”。</li>
+          <li><b>速度与加速度：</b>慢速起步、慢速停止，别让灯头甩起来；<code>POSE</code> 的 <code>speed</code> 限 1..52°/s。</li>
+          <li><b>离线 / 失联 / 存储：</b>任一舵机离线进 FAULT；失联 300ms 停止接受新目标；NVS 校验失败拒绝运动。</li>
         </ol>
       </div>
       <div class="box">
         <h3>标定不是“设中位”</h3>
-        <p>标定是记录这个关节<b>实际允许的两个端点</b>：把臂慢慢移到安全下限，读回原始刻度，记为 MIN；再移到安全上限，记为 MAX。</p>
+        <p>标定是记录这个关节<b>实际允许的两个 raw 端点</b>：把臂慢慢移到 raw 较小的一侧，读回原始刻度，记为 MIN；再移到 raw 较大的一侧，记为 MAX。MIN 不一定是机械上的“下”。</p>
         <p>标定值存在 ESP32 的 NVS 里，断电不丢。换舵机、拆臂、换安装孔后必须重新标定。</p>
         <p>如果关节的行程跨过 0/4095 边界，简单的数值 min/max 会失效；先换一个舵盘齿避开，或明确要求扩展成环形区间。</p>
       </div>
@@ -1303,7 +1303,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
       <div class="box">
         <h3>为什么 USB 插着舵机也不动</h3>
         <p>USB-C 只给 ESP32、OLED 和逻辑供电；舵机母线走 DC 5.5×2.1 的 12V。只插 USB 时能扫描、能读代码，但舵机没有 12V，读回来就是离线。</p>
-        <p>本课测试时就遇到 <code>SCAN</code> 返回 <code>0/3</code>：命令链路是通的，只是舵机没有上电/没接好。先查 12V 和 3P 线，不要先怀疑库。</p>
+        <p>本课第一次接单只 ID1 时也会看到 <code>1/3 online</code>：命令链路是通的，只是另外两只没接/没上电。先查 12V 和 3P 线，不要先怀疑库。</p>
       </div>
     </div>
 
@@ -1345,84 +1345,90 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo</code></pre>
     </figure>
 
     <div class="box" style="margin-top:12px">
-      <h3>例程：09_servo_basic，先读、再标定、最后才动</h3>
-      <p>这个例程上电<b>不会自动转</b>。它先扫描三只舵机、读位置和电压；你要先给每个关节标定 MIN / MAX，<code>MOVE</code> 才会接受安全区内的目标。</p>
-      <p class="sub" style="margin:4px 0 0"><b>标定全程接 12V 5A 并打开</b>；<code>TORQUE OFF</code> 只关输出力矩，不给舵机断电。12V 关着时舵机不响应，<code>SCAN</code> 会是 <code>0/3</code>，读不到位置也就无法 <code>MARK</code>。</p>
+      <h3>例程：09_servo_basic，公版标定/检测台</h3>
+      <p>09 现在是一个很薄的整机 app：OLED、串口和板级 HAL 之外，标定、限位、扭矩、失联和离线保护全部由公版 <code>LT100Core</code> 负责。上电<b>不会自动转</b>，也不会自动上力；网页标定/检测台通过 <code>LT100P/1</code> 读状态和做标定。</p>
+      <p class="sub" style="margin:4px 0 0"><b>08 和 09 分工：</b>08 串口控制台只管灯、OLED 和板子状态，不接舵机；舵机标定/检测走 09 + <a href="servo.html">公版标定台</a>。</p>
       <ol class="steps">
-        <li><b>断电接线，再接 12V</b><span>接线时 12V 先关；3P 总线串好，USB-C 接电脑，手扶住手臂。接好后打开 <b>12V 5A</b>——舵机逻辑和电机都靠它，USB 只给 ESP32/串口。</span></li>
-        <li><b>上传并打开串口</b><span><code>examples\09_servo_basic\09_servo_basic.ino</code>；115200，行尾 <code>Newline</code>。</span></li>
-        <li><b>扫描</b><span><code>SCAN</code> 应看到 <code>3/3 online</code>。如果是 <code>0/3</code>，先查 12V 是否打开、3P 线和 ID，不要继续。</span></li>
-        <li><b>看限位</b><span><code>LIMITS</code>：新机器三个关节都是 <code>UNSET</code>，此时 <code>MOVE</code> 会被 <code>ERR 09</code> 拒绝。</span></li>
-        <li><b>标定腕关节（建议先 ID3）</b><span><code>TORQUE 3 OFF</code> 后用手慢慢把关节移到安全下限，发 <code>MARK 3 MIN</code>；再移到安全上限，发 <code>MARK 3 MAX</code>；最后 <code>TORQUE 3 ON</code>。<b>全程 12V 保持打开；TORQUE OFF 只关力矩，不给舵机断电。卸力时手臂可能掉下来，必须扶住。</b></span></li>
-        <li><b>在安全区内动</b><span><code>MOVE 3 &lt;安全位置&gt; 250</code>；位置取 <code>LIMITS</code> 显示的 safe 区间内。再发 <code>READ 3</code> 确认实际位置。</span></li>
-        <li><b>重复肘、肩</b><span>每只关节都单独标定；负载越大越要慢，先腕、再肘、最后肩。</span></li>
+        <li><b>断电接线，再接 12V</b><span>接线时 12V 先关；3P 总线串好，USB-C 接电脑，手扶住手臂。接好后打开 <b>12V 5A</b>；USB 只给 ESP32/串口。</span></li>
+        <li><b>安装公版库并上传 09</b><span>Arduino IDE 需要 <code>LT100Core</code> 和 <code>LT100Board</code> 两个库（见 <a href="../platform/README.md">platform/README.md</a>）；用 CLI 则把 <code>--libraries</code> 指向 <code>platform\libraries</code>。上传 <code>examples\09_servo_basic</code>。</span></li>
+        <li><b>确认在线</b><span>打开标定台，连接后看 <code>3/3</code> 在线；<code>0/3</code> 先查 12V、3P 线、ID 1/2/3。不要继续标定。</span></li>
+        <li><b>标定腕（建议先 ID3）</b><span>扶住 → 卸力 → 移到参考姿态，填 q → <code>CAL REF</code> → 选方向 → <code>CAL DIR</code> → 移到 raw 较小端 <code>CAL MARK MIN</code> → 移到 raw 较大端 <code>CAL MARK MAX</code>。</span></li>
+        <li><b>保存并重复</b><span><code>CAL SAVE</code> 写 NVS 并退出 CAL；对肘 ID2、肩 ID1 重复。三个关节都有效才进入 READY。</span></li>
+        <li><b>上力 + 端点测试</b><span>先把手臂移回 safe 区间，再 <code>TORQUE all ON</code>；用页面低速端点测试验证不撞、不夹线、不超温，随时 STOP / ESTOP / 断电。</span></li>
       </ol>
-      <p class="sub" style="margin:8px 0 0">标定值写入 NVS，断电不丢；换舵机、拆臂或换安装孔后，用 <code>CLEAR &lt;id&gt;</code> 清掉重标。</p>
-      <pre style="margin-top:12px"><code>&gt; SCAN
-SCAN done: 3/3 online
-&gt; LIMITS
-  ID3 limits UNSET (MOVE disabled)
-&gt; MOVE 3 1900 250
-ERR 09 uncalibrated; use MARK &lt;id&gt; MIN and MARK &lt;id&gt; MAX first
+      <p class="sub" style="margin:8px 0 0">标定值写入 NVS，断电不丢；换舵机、拆臂或换安装孔后，用 <code>CAL CLEAR all</code> 清掉重标。</p>
+      <pre style="margin-top:12px"><code>&gt; HELLO
+HELLO protocol=1 fw=0.1.0 cal=1 features=state,stream,motion,cal,limits
+&gt; STATE
+STATE seq=0 mode=UNCAL online=7 cal=0 torque=0 err=0 age=0 ...
 &gt; TORQUE 3 OFF
-OK torque ID3 OFF
-&gt; MARK 3 MIN
-OK mark ID3 MIN raw=1180; mark the other endpoint
-&gt; MARK 3 MAX
-OK mark ID3 MAX raw=2860 safe=1220..2820
-&gt; TORQUE 3 ON
-OK torque ID3 ON
-&gt; MOVE 3 2000 250
-OK move id=3 from=1180 pos=2000 speed=250 safe=1220..2820</code></pre>
-      <p class="sub" style="margin:6px 0 0">示例数字只用来演示格式，不是你们机器的安全值；实际以 <code>LIMITS</code> 读回为准。</p>
-      <p class="res"><a href="../examples/09_servo_basic/09_servo_basic.ino">examples\09_servo_basic\09_servo_basic.ino</a> · <a href="../docs/teach/servo-basic.md">docs\teach\servo-basic.md</a> · <a href="../docs/reference/servo/st-3215-c018-datasheet.pdf">ST3215 数据手册</a></p>
-    </div>
-
-    <div class="box" style="margin-top:12px">
-      <h3>命令表</h3>
+OK torque=off
+&gt; CAL REF 3 0
+OK cal_ref
+&gt; CAL DIR 3 +1
+OK cal_dir
+&gt; CAL MARK 3 MIN
+OK cal_min
+&gt; CAL MARK 3 MAX
+OK cal_max
+&gt; CAL SAVE
+OK cal_saved
+&gt; TORQUE all ON
+OK torque=on
+&gt; POSE seq=1 q=10.0,0.0,-5.0 speed=10 acc=20
+# POSE 不逐帧 ACK；看 STATE 的 mode 和 seq</code></pre>
+      <p class="sub" style="margin:6px 0 0"><code>speed</code> 是度/秒（1..52），<code>acc</code> 是舵机加速度寄存器（0..254）；<code>CAL</code> 模式下 <code>POSE</code> 和 <code>TORQUE ON</code> 会被拒绝，必须 <code>CAL SAVE</code> 或 <code>CAL CLEAR</code> 退出 <code>CAL</code>。</p>
+      <h4 style="margin:16px 0 6px">LT100P/1 命令</h4>
       <table>
-        <tr><th>命令</th><th>作用</th><th>示例回复</th></tr>
-        <tr><td><code>SCAN</code></td><td>扫描 ID 1..3，只读</td><td><code>SCAN done: 3/3 online</code></td></tr>
-        <tr><td><code>READ &lt;id&gt;</code></td><td>读位置、电压、温度、负载</td><td><code>ID3 pos=2000 v=12.0V t=31C load=12</code></td></tr>
-        <tr><td><code>LIMITS</code></td><td>查看已存限位</td><td><code>ID3 limits raw=1180..2860 safe=1220..2820</code></td></tr>
-        <tr><td><code>MARK &lt;id&gt; MIN\|MAX</code></td><td>把当前位置记为端点；写 NVS</td><td><code>OK mark ID3 MIN raw=1180</code></td></tr>
-        <tr><td><code>TORQUE &lt;id&gt; ON\|OFF</code></td><td>开/关输出力矩；OFF 用于手移标定</td><td><code>OK torque ID3 OFF</code></td></tr>
-        <tr><td><code>CLEAR &lt;id&gt;</code></td><td>清除该关节限位</td><td><code>OK clear limits</code></td></tr>
-        <tr><td><code>MOVE &lt;id&gt; &lt;pos&gt; [speed]</code></td><td>只在 safe 区间内动；速度 1..600</td><td><code>OK move id=3 from=1180 pos=2000 speed=250 safe=1220..2820</code></td></tr>
+        <tr><th>命令</th><th>作用</th></tr>
+        <tr><td><code>HELLO</code></td><td>协议/固件/功能位</td></tr>
+        <tr><td><code>STATE</code></td><td>模式、在线/标定/扭矩位、q/raw/load/cur/v/t、err、age</td></tr>
+        <tr><td><code>STREAM ON\|OFF</code></td><td>10Hz 周期 STATE；默认关闭</td></tr>
+        <tr><td><code>TORQUE &lt;id\|all&gt; ON\|OFF</code></td><td>开关输出力矩；OFF 用于手移标定</td></tr>
+        <tr><td><code>CAL REF &lt;id&gt; &lt;q&gt;</code></td><td>当前姿态记为模型角 q（度）</td></tr>
+        <tr><td><code>CAL DIR &lt;id&gt; +1\|-1</code></td><td>raw 增大时 q 的方向</td></tr>
+        <tr><td><code>CAL MARK &lt;id&gt; MIN\|MAX</code></td><td>当前 raw 记为端点</td></tr>
+        <tr><td><code>CAL SAVE</code> / <code>CAL CLEAR &lt;id\|all&gt;</code></td><td>保存到 NVS / 清除标定</td></tr>
+        <tr><td><code>LIMITS</code></td><td>每关节 raw 端点与 safe 区间</td></tr>
+        <tr><td><code>POSE seq=&lt;n&gt; q=&lt;q1,q2,q3&gt; speed=&lt;deg/s&gt; acc=&lt;0..254&gt;</code></td><td>三关节目标；最新覆盖，不逐帧 ACK</td></tr>
+        <tr><td><code>STOP</code> / <code>ESTOP</code> / <code>CLEAR</code></td><td>保持最后目标 / 锁存急停 / 清除故障</td></tr>
       </table>
-      <p class="sub" style="margin:8px 0 0">错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>05</code> 行太长 · <code>06</code> 舵机离线 · <code>07</code> 写指令无 ACK · <code>08</code> 两端点太近 · <code>09</code> 未标定 · <code>10</code> 目标超出安全区。</p>
+      <p class="sub" style="margin:8px 0 0">错误码：<code>01</code> 未知命令 · <code>02</code> 参数/格式 · <code>03</code> 越界 · <code>05</code> 行太长 · <code>06</code> 舵机离线 · <code>07</code> 无 ACK · <code>08</code> 端点太近/顺序不成立 · <code>09</code> 未标定 · <code>10</code> 超出安全区 · <code>11</code> 模式不允许 · <code>14</code> 存储失败 · <code>17</code> 失联。</p>
+      <p class="res"><a href="../examples/09_servo_basic/09_servo_basic.ino">examples\09_servo_basic\09_servo_basic.ino</a> · <a href="../docs/teach/servo-basic.md">docs\teach\servo-basic.md</a> · <a href="../docs/design/common-platform.md">公版设计</a> · <a href="../docs/reference/servo/st-3215-c018-datasheet.pdf">ST3215 数据手册</a></p>
     </div>
 
     <div class="two">
       <div class="box">
         <h3>OLED 三行</h3>
-        <pre><code>SERVO 3/3 CAL
-1:2048 2:2051
-3:2000 V:12.0</code></pre>
-        <p style="margin:8px 0 0">第一行在线数量 + 是否已标定；第二、三行是 ID 的原始位置和第一只在线舵机的电压。<code>CAL</code> 表示有关节已标定，<code>RAW</code> 表示还没标定。</p>
+        <pre><code>UNCAL O1 C0 T0
+J1 2048 J2 ----
+J3 ---- 12.0V</code></pre>
+        <p style="margin:8px 0 0">第一行是模式 + 在线/标定/扭矩位，下面两行是 J1/J2/J3 的 raw 和总线电压。<code>UNCAL</code> 未标定、<code>CAL</code> 标定中、<code>READY</code> 就绪、<code>MOTION</code> 运动中；离线关节显示 <code>----</code>。</p>
       </div>
       <div class="box">
         <h3>读回字段</h3>
-        <p><code>pos</code> 原始位置 0..4095；<code>v</code> 电压（打印为 <code>12.0V</code>，底层原始值 120，单位 0.1V）；<code>t</code> 温度 °C；<code>load</code> 负载 0..1000，带符号。</p>
+        <p><code>raw</code> 原始位置 0..4095；<code>q</code> 按标定换算的实测角；<code>v</code> 电压（<code>120</code> 表示 12.0V，单位 0.1V）；<code>t</code> 温度 °C；<code>load</code> 输出电压百分比 0..1000，<b>不是电流</b>；<code>cur</code> 原始电流寄存器值，不能直接当安培。</p>
         <p>位置只说明“舵机轴在哪”，不说明“机械臂是否安全”；安全判断要用标定出来的 safe 区间。</p>
       </div>
     </div>
 
     <div class="box" style="margin-top:12px">
       <h3>本机实测与排错</h3>
-      <p>09 编译：341989 B / 26% flash，25664 B / 7% RAM；上传后哈希校验通过。命令路径实测：<code>SCAN</code> 回 <code>0/3 online</code>（本次舵机没有响应，先查 12V/3P 线），<code>LIMITS</code> 三个 UNSET，<code>MOVE</code> 回 <code>ERR 09</code>；用临时 NVS 种子写入 1000..2000 后，<code>MOVE 1 2048</code> 被 <code>ERR 10</code> 拒绝，<code>MOVE 1 1500</code> 通过限位检查后因离线回 <code>ERR 06</code>，测试后已清除。</p>
-      <p class="sub" style="margin:6px 0 0"><b>还没验证实机转动和实机标定</b>：当前是 <code>0/3</code>。接上 12V、确认 <code>3/3 online</code> 后，再按上面的步骤做第一次标定；不要把编译通过当成机械动作已验证。</p>
+      <p>09 编译：351,573 B / 26% flash，25,800 B / 7% RAM；公版 host 测试全过，网页 mock 标定流程通过。真实三关节标定/运动<b>还没验证</b>（当前只接 ID1）。</p>
+      <p class="sub" style="margin:6px 0 0"><b>不要把编译通过、host 测试或 mock 当成机械动作已验证。</b>接好 12V、确认 <code>3/3 online</code> 后，再按上面的步骤做第一次标定和低速端点测试。</p>
       <table>
         <tr><th>现象</th><td>先检查</td></tr>
-        <tr><td><code>SCAN</code> 回 0/3</td><td>12V 5A 是否打开；3P 线是否插好；ID 是否真是 1/2/3；USB 只给逻辑，不给舵机</td></tr>
+        <tr><td><code>STATE</code> 显示 <code>online=1</code> / 只有一只在线</td><td>12V 5A 是否打开；3P 线是否插好；ID 是否真是 1/2/3；USB 只给逻辑，不给舵机</td></tr>
         <tr><td>只掉一只</td><td>那一只的 3P 线/ID；总线是串联的，前一只没接好会影响后面</td></tr>
-        <tr><td><code>ERR 06</code></td><td>该 ID 当前不在线；先 <code>SCAN</code>，查 12V 和线</td></tr>
-        <tr><td><code>ERR 07</code></td><td>写指令没有 ACK；查 ID、总线、电源</td></tr>
-        <tr><td><code>ERR 08</code></td><td>MIN/MAX 太近（少于 80 格）；重新标定两个端点</td></tr>
-        <tr><td><code>ERR 09</code></td><td>未标定；先 <code>MARK id MIN/MAX</code></td></tr>
+        <tr><td><code>ERR 06</code></td><td>该 ID 当前不在线；先看 <code>STATE</code>，查 12V 和线</td></tr>
+        <tr><td><code>ERR 08</code></td><td>端点太近、顺序不成立，或参考点不在 safe 内；重新标定两个 raw 端点</td></tr>
+        <tr><td><code>ERR 09</code></td><td>未标定；先做 <code>CAL REF/DIR/MARK</code>，再 <code>CAL SAVE</code></td></tr>
         <tr><td><code>ERR 10</code></td><td>目标不在 safe 区间；用 <code>LIMITS</code> 看范围，别硬闯</td></tr>
-        <tr><td><code>TORQUE OFF</code> 后臂掉</td><td>卸力就会掉；先扶住，先做腕，再做肩</td></tr>
-        <tr><td>方向反了</td><td>安装方向不同是正常的；限位仍用原始 MIN/MAX，不要按“变大就是向上”猜</td></tr>
+        <tr><td><code>ERR 11</code></td><td>模式不允许：<code>CAL</code> 下不能 POSE/TORQUE ON；先 <code>CAL SAVE</code> 或 <code>CAL CLEAR</code></td></tr>
+        <tr><td><code>ERR 14</code></td><td>NVS 存储失败；重新 <code>CAL SAVE</code>，仍失败则查 NVS/分区</td></tr>
+        <tr><td><code>ERR 17</code></td><td>失联：主机 300ms 没发新 POSE；应用要持续发目标或主动 <code>STOP</code></td></tr>
+        <tr><td><code>TORQUE OFF</code> 后臂掉</td><td>卸力就会掉；先扶住，先做腕，再做肘/肩</td></tr>
+        <tr><td>方向反了</td><td>用 <code>CAL DIR</code> 设 ±1，不要靠交换 MIN/MAX 猜</td></tr>
       </table>
       <p class="sub" style="margin:8px 0 0">12V 2A 会在三只同时动作时掉压复位；热插拔可能烧总线。换舵机或拆臂后必须重新标定。</p>
     </div>

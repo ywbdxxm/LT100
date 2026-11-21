@@ -131,7 +131,7 @@ Hard resetting via RTS pin...
 | "降波特率能救自动下载" | 失败发生在 `Connecting...`，是复位/IO0 问题，与上传波特率无关；手动进下载后可再用 115200 排错 |
 | "用 `--no-stub` 更稳" | 更慢：ROM loader 上限 115200；stub 921600 快得多 |
 | "两个脚本一起跑更快" | 会抢 COM 口，报 `UnauthorizedAccessException` / `Cannot configure port`；先关干净 |
-| "烧完 `SCAN` 回 0/3 就是烧录失败" | 不一定。09 上电只读不转，没接 12V 时 `0/3` 正常；发 `HELP` / `LIMITS` 确认固件在跑 |
+| "烧完 `STATE` 显示 `online=0` 就是烧录失败" | 不一定。09 上电只读不转，没接 12V 时 `online=0` 正常；发 `HELLO` / `HELP` 确认固件在跑 |
 
 ## 5. 编译与验证
 
@@ -140,31 +140,30 @@ Hard resetting via RTS pin...
 ```powershell
 .\resources\arduino-cli\arduino-cli.exe compile `
   --fqbn esp32:esp32:esp32 `
+  --libraries ".\platform\libraries" `
   .\examples\09_servo_basic
 ```
 
-本机实测：`341989 bytes (26%)` flash、`25664 bytes (7%)` RAM，退出码必须为 `0`。
+`--libraries` 让 CLI 找到公版 `LT100Core` / `LT100Board`；用 Arduino IDE 时先把这两个目录复制到
+`Documents\Arduino\libraries`（见 [arduino-env.md](arduino-env.md)）。
+
+本机实测：`351573 bytes (26%)` flash、`25800 bytes (7%)` RAM，退出码必须为 `0`。
 
 烧完先等板子启动，再开串口监视器（**115200**，行尾 Newline），发：
 
 ```text
-SCAN
+STATE
 ```
 
-正常应回：
-
-```text
-SCAN done: 3/3 online
-```
-
-回 `0/3` 时：烧录可能已经成功，只是舵机没 12V、3P 线没插好或 ID 不对；也可以发 `HELP`、`LIMITS` 确认固件在跑。
+正常应回一行 `STATE ... mode=UNCAL ... online=...`（`online=7` 表示三只都在）；
+也可以发 `HELLO` / `HELP`。`online=0` 时：烧录可能已经成功，只是舵机没 12V、3P 线没插好或 ID 不对。
 
 ## 6. 安全
 
 - 烧录只需要 USB；有舵机时建议 **关 12V**，并扶住手臂。
 - 不要带电插拔 3P 舵机线。
 - 烧完先确认板子在跑，再开 12V；09 上电不会自动转，但其他固件不一定。
-- 标定 / `SCAN` 需要 12V；烧录不需要。
+- 标定 / `POSE` 需要 12V；烧录不需要。
 
 ## 7. 检查清单
 
@@ -173,7 +172,7 @@ SCAN done: 3/3 online
 - [ ] 课堂烧录：按住 BOOT，点 IDE 上传，全程按住到上传完成
 - [ ] 编译退出码 `0`
 - [ ] 上传日志有 `Hash of data verified` / `Done uploading`
-- [ ] 上传后串口 115200 能回 `SCAN` / `HELP`
+- [ ] 上传后串口 115200 能回 `STATE` / `HELLO`
 
 ## 8. 内部说明
 

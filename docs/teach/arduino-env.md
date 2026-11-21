@@ -30,6 +30,16 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
 | `Adafruit BusIO` | 1.17.4 | SSD1306 的 I2C 依赖 |
 | `U8g2` | 2.36.19 | 单色 OLED 图形库；06/07 例程的星场与立方体 |
 
+09 例程还依赖仓库内 `platform/libraries` 的两个公版库：
+
+| 库 | 位置 | 用途 |
+|---|---|---|
+| `LT100Core` | `platform/libraries/lt100_core` | 协议、标定、限位、安全状态机 |
+| `LT100Board` | `platform/libraries/lt100_board` | ESP32 板级 HAL（SCServo 总线、NVS、串口） |
+
+Arduino IDE：把这两个目录整个复制到 `Documents\Arduino\libraries`（目录名不能改），重启 IDE。
+命令行：编译时加 `--libraries <仓库>\platform\libraries`，不用复制。
+
 ## 2. 安装步骤
 
 1. 安装 IDE。装完如果自动打开了 IDE，先关掉。
@@ -53,6 +63,9 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
    它默认读写 `%LOCALAPPDATA%\Arduino15`，与 IDE 共用同一套 core 和库。
    本包的 `Arduino15\arduino-cli.yaml` 已登记 ESP32 板卡索引地址。
    课堂烧录由人用 IDE 完成；agent 只用 CLI 编译、读串口、跑测试，不代烧。
+5. **只在做 09 时**：再把仓库里的 `platform\libraries\lt100_core` 和
+   `platform\libraries\lt100_board` 整个复制到同一个
+   `Documents\Arduino\libraries`（目录名不能改），重启 IDE。01–08 不需要这两个库。
 
 > 编译、烧录、`921600`、自动失败按 `BOOT` 的完整流程
 > 单独放在 [flashing.md](flashing.md)；本文件只讲环境安装与验证。
@@ -108,10 +121,11 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
   通过：355703 B / 27% flash，26676 B RAM / 8%，串口上传哈希校验通过。
 - 2026-11-21 同法编译并烧录 `examples/07_oled_cube`（U8g2 旋转立方体）
   通过：349992 B / 26% flash，25532 B RAM / 7%，串口上传哈希校验通过。
-- 2026-11-21 同法编译并烧录 `examples/09_servo_basic`（SCServo 1.0.2 + U8g2 + NVS 限位）
-  通过：341989 B / 26% flash，25664 B RAM / 7%，串口上传哈希校验通过。
-  本次实测舵机总线回 `0/3`（舵机没有响应，先查 12V/3P 线），命令与限位门控测试见
+- 2026-11-21 09 例程改为公版重做版（`LT100Core` + `LT100Board` + SCServo 1.0.2 + U8g2），
+  编译通过：351,573 B / 26% flash，25,800 B RAM / 7%，`esp32:esp32:esp32`，exit 0。
+  旧版（自带 SCAN/MARK/MOVE 协议，341989 B）已退役，只在 git 历史里；命令与标定流程见
   [servo-basic.md](servo-basic.md)。
+  **旧版 NVS 命名空间是 `lt100servo`，新版是 `lt100cal`，两者不通用——升级后必须重新标定。**
 - 同一天连续烧录 09 时出现一次 **`Wrong boot mode detected (0x13)`**：第一次自动下载成功，
   紧接着第二次失败，重试后成功；上传日志在 `.local/upload-09-*.log`。说明自动复位不是 100%
   可靠，按住 `BOOT` 再上传（还不行就保持 `BOOT` 点一下 `EN`）是正常后备，不是固件或 Flash 坏了。
@@ -125,7 +139,7 @@ SCServo 1.0.2 是 Arduino 库管理器里的最新版本（2024-08-08 发布，r
 | IDE 提示下载/更新 | 数据目录没复制进去，重新复制 `Arduino15`，确认复制到当前用户 |
 | 板卡列表没有 ESP32 | 确认 `%LOCALAPPDATA%\Arduino15\packages\esp32` 存在 |
 | 认不到 COM 口 | 装 `CP210x_Universal_Windows_Driver\silabser.inf`，装完拔插 USB |
-| 编译报找不到 SCServo.h | `user-libraries` 没复制到 `Documents\Arduino\libraries` |
+| 编译报找不到 SCServo.h / LT100Core.h / LT100Board.h | `user-libraries` 没复制到 `Documents\Arduino\libraries`；或漏了 `platform\libraries` 的 `lt100_core`、`lt100_board` |
 | 烧录失败/端口被占 | 关闭 IDE 串口监视器；确认端口号；上传速度降到 115200 |
 | 一直卡在 `Connecting...` | 手动进下载模式：按住 BOOT → 点一下 EN → 保持 BOOT 按住，再点上传；看到 `Connecting...` 后再松开 |
 | 复制后 IDE 仍用旧环境 | IDE 没关就复制了；关掉 IDE 重开，必要时重新复制 |

@@ -35,26 +35,24 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
 - 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
 - 网页串口控制台（本机桥优先，Web Serial 回退）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
-- 网页舵机标定台（扫描/卸力/MIN/MAX/安全区 MOVE）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
+- 网页标定与检测台（零点/方向/raw 端点、状态检测、低速端点测试）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
 - 采购台账（30 套实付，¥4342.94）：[docs/build/purchase-list.md](docs/build/purchase-list.md)
 - 官方参考资料（手册/原理图/数据手册/例程）：[docs/reference/README.md](docs/reference/README.md)
 - 课程例程（按课次编号）：[examples/](examples/)
-- 现状照片：[实物图/正面.jpg](实物图/正面.jpg)、[实物图/侧面.jpg](实物图/侧面.jpg)
-- 结构打印件（14 个切片好的 3MF）：[结构/](结构/)
+- 现状照片：[hardware/photos/front.jpg](hardware/photos/front.jpg)、[hardware/photos/side.jpg](hardware/photos/side.jpg)
+- 结构打印件（14 个切片好的 3MF）：[hardware/prints/](hardware/prints/)；板子 STEP 在 [hardware/cad/](hardware/cad/)
 
 ## 目录
 
 ```text
 LT100/
 ├── docs/          设计、教学、采购、参考资料
-├── examples/      01–09 课程例程
-├── platform/      公版固件、整机 app、host 测试（新应用走这里）
+├── examples/      01–09 课程例程（索引见 examples/README.md）
+├── platform/      公版：libraries/ 库、apps/ 整机 app、tests/
 ├── tools/         网页控制台、串口桥、烧录探针
-├── web/           现有课程页面（页面版）
+├── web/           课程页面（页面版）
+├── hardware/      物理资产：prints/ 3MF、cad/ STEP、photos/ 照片
 ├── resources/     学生机离线 Arduino 包（约 2.2GB，本地保留、不进 git）
-├── 结构/          结构打印件
-├── 实物图/        实物照片
-├── flashing-report/  烧录对照报告（生成物，不进 git）
 └── .local/        本地日志、证据、构建缓存（不进 git）
 ```
 
@@ -62,12 +60,13 @@ LT100/
 
 ## 当前状态
 
-- 结构 + 3×ST3215-C018 已装配（2026-11 实物见 `实物图/`）
+- 结构 + 3×ST3215-C018 已装配（2026-11 实物见 `hardware/photos/`）
 - 30 套电料已下单到货：主控板、12V 5A 电源、24 灯环（黑 15 + 白 15）、Type-C 线、
   1.25mm/SM2.54 转杜邦、杜邦线；工具两把胶枪 + 电动螺丝刀
 - **未装**：灯环、转接线、扩散片；灯环接口与线色已确认（见 BOM）
 - 灯罩内壁橙色；白色 PET 反光膜选装
-- **公版 Phase 0**：`lt100_core` + `lt100_lamp` 已实现，host 测试全过、固件编译通过；**未做三关节实板标定/运动验证**（当前只接了 ID1）。
+- **公版 Phase 0**：`lt100_core` + `lt100_board` + `lt100_lamp` 已实现，09 已迁到公版，host/协议测试全过、固件编译通过；**未做三关节实板标定/运动验证**（当前只接了 ID1）。
+- 标定/检测页已接 `LT100P/1`，mock 流程与低速端点测试通过；08 只做灯/OLED/状态，不接舵机。
 
 ## 后续升级（当前不做）
 

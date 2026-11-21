@@ -10,6 +10,7 @@ docs/
 ├── build/            采购与搭建
 │   ├── bom.md
 │   └── purchase-list.md
+├── plans/            已完成的实施计划（存档，不是当前规格）
 ├── teach/            教学
 │   ├── course-4h.md
 │   ├── arduino-env.md
@@ -38,11 +39,14 @@ docs/
 | [teach/flashing-crosscheck.md](teach/flashing-crosscheck.md) | **内部排查记录**：自动下载失败的对照实验与采集脚本（学生不用看） | 老师/维护者继续定位 |
 | [teach/kinematics-and-force.md](teach/kinematics-and-force.md) | 3R 平面臂运动学（FK/IK/工作空间/误差）+ 静力学（力臂/电流/柔顺）+ 7 个课堂实验 | 备物理课、讲原理 |
 | [teach/serial-console.md](teach/serial-console.md) | 串口控制台：UART 参数、命令表、OLED/灯行为、主机工具 | 学串口、改命令 |
-| [teach/servo-basic.md](teach/servo-basic.md) | 舵机基础：闭环、总线、逐关节标定与限位、09 例程 | 学舵机、标定限位 |
+| [teach/servo-basic.md](teach/servo-basic.md) | 舵机基础：闭环、总线、逐关节标定与限位、09 公版例程与网页标定台 | 学舵机、标定限位 |
+| [plans/2026-11-21-serial-console.md](plans/2026-11-21-serial-console.md) | 08 串口控制台的实施计划（历史存档；当前规格看 design/teach） | 追溯当时怎么做的 |
 | [reference/README.md](reference/README.md) | 官方原件清单、来源与哈希 | 查一手资料 |
 
 约定：
 
 - 结论写进 design / build / teach，不写进 `reference/`
 - `reference/` 里的文件保持原样，不改名、不编辑
-- 页面版在 `../../web/`：主控板、串口控制台、舵机标定台
+- 页面版在 [`../web/`](../web/)：[`index.html`](../web/index.html) 主控板、
+  [`serial.html`](../web/serial.html) 08 串口控制台、
+  [`servo.html`](../web/servo.html) 09 公版标定与检测台

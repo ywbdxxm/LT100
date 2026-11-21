@@ -41,7 +41,8 @@
 | `TEXT <ascii>` | 在 OLED 上显示一行文字（最多 20 字符，5 秒） | `OK text=HELLO` |
 | `CLEAR` | 清除 TEXT | `OK text cleared` |
 | `STREAM 0\|1` | 每秒自动发一条 STAT | `OK stream=1` |
-| `SERVO ...` | 预留，后续扩展 | `ERR 04 servo not enabled` |
+
+08 不接舵机。舵机标定/检测是 09 + 公版 `LT100P/1`，不要再往 08 加 `SERVO` 命令。
 
 错误统一 `ERR <code> <message>`；未知命令、参数缺失、越界都返回错误，不重启、不阻塞。
 
@@ -72,7 +73,7 @@ OK color=#FF6600
 
 - 非阻塞主循环：`Serial.available()` 逐字节收，凑满一行再解析；动画和 OLED 刷新不能停。
 - 命令解析用固定小缓冲 + `strtok`/手写切分，避免 `String` 反复分配。
-- 命令表用 `{name, handler}` 数组，后续加 `SERVO` 只加一项，不改主循环。
+- 命令用固定的 `if/else` 链，新增灯/屏命令只加一段，不改主循环；舵机不在这里扩展。
 - OLED 刷新约 10 fps，灯环约 30 fps；I2C 400 kHz。
 - `STAT` 用一行 JSON，方便电脑端 `json.loads` / PowerShell `ConvertFrom-Json`。
 
@@ -110,6 +111,6 @@ OK color=#FF6600
 
 ## 9. 后续扩展
 
-- `SERVO` 命令：`SERVO ID POS SPEED`、`SERVO READ`，复用 UART1 和 `SMS_STS`；逐关节限位已在 [09_servo_basic](../teach/servo-basic.md) 落地，下一步并进 08。
+- **不把舵机并进 08**：08 保持灯/OLED/板子状态；舵机标定/检测走独立的 [09_servo_basic](../teach/servo-basic.md) + [公版标定台](../../web/servo.html)，协议 `LT100P/1`。
 - 二进制帧流：电脑推 128×32 画面，OLED 当第二屏；作为串口第二例程。
-- Web Serial 面板已实现：`web/serial.html`，浏览器直接连 COM 口，做颜色滑杆和遥测曲线。
+- 网页串口面板已实现：`web/serial.html`，优先走本机串口桥，桥不可用才回退 Web Serial。

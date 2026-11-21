@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LT100 · 舵机标定台</title>
+<title>LT100 · 公版标定与检测台</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="serial.css">
 <link rel="stylesheet" href="servo.css">
@@ -12,21 +12,22 @@
 <header class="serial-top">
   <div class="wrap serial-top-inner">
     <a class="back" href="index.html#servo">← 返回 LT100</a>
-    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">舵机标定台</span></div>
-    <div class="conn-state" id="connState"><span class="dot"></span><span id="connText">未连接</span></div>
+    <div class="serial-brand"><span class="brand">LT100</span><span class="brand-sub">公版标定与检测台</span></div>
+    <span id="mockBadge" class="pill warn" hidden>模拟</span>
+    <div class="conn-state" id="connState" role="status" aria-live="polite"><span class="dot"></span><span id="connText">未连接</span></div>
   </div>
 </header>
 
 <main class="wrap serial-main">
   <section class="serial-intro">
     <div>
-      <h1>先标定，再让关节动</h1>
-      <p class="lead">用浏览器直接连 09_servo_basic：扫描位置、卸力、记录 MIN/MAX、上力，再在安全区内试动。不用串口助手。这是 3R 平面臂：三个关节共面，只在一个竖直平面内动，标定也只针对平面内的关节限位。</p>
+      <h1>先标定，再检测，最后才动</h1>
+      <p class="lead">基于公版 <code>LT100Core</code> / <code>LT100P/1</code>：看三关节实测状态，完成零点、方向、raw 端点标定，检查在线/标定/扭矩/电压/温度，再用低速端点测试验证安全区。网页不绕过固件限位。</p>
     </div>
     <div class="serial-actions">
       <button id="connectBtn" class="btn primary" type="button">连接串口</button>
       <button id="disconnectBtn" class="btn" type="button" disabled>断开</button>
-      <span id="portInfo" class="port-info">未选择端口</span>
+      <span id="portInfo" class="port-info">未连接</span>
     </div>
   </section>
 
@@ -34,142 +35,198 @@
   <div id="hint" class="notice info" hidden></div>
 
   <div class="notice warn servo-safety">
-    <b>先扶住手臂。</b>「卸力」只会关掉输出力矩，不会给舵机断电；关节可能掉下来。标定全程 12V 5A 必须打开，USB 只给逻辑。先做腕、再做肘、最后做肩；每次只动一个关节，MOVE 只发安全区内的目标。
+    <b>先扶住手臂。</b>「卸力」只关输出力矩，不会给舵机断电；关节可能掉下来。标定全程 12V 5A 必须打开，USB 只给逻辑。先做腕、再做肘、最后做肩；端点测试会发 <code>POSE</code>，必须三关节在线、标定完整、扭矩已上力，并随时准备 <b>STOP / ESTOP / 断电</b>。
   </div>
+
+  <section class="status-strip" aria-label="设备状态">
+    <div class="stat"><span>模式</span><b id="stMode">—</b></div>
+    <div class="stat"><span>在线</span><b id="stOnline">0/3</b></div>
+    <div class="stat"><span>标定</span><b id="stCal">0/3</b></div>
+    <div class="stat"><span>扭矩</span><b id="stTorque">0/3</b></div>
+    <div class="stat"><span>错误</span><b id="stErr">—</b></div>
+    <div class="stat"><span>反馈年龄</span><b id="stAge">—</b></div>
+    <div class="stat"><span>总线电压</span><b id="stVolt">—</b></div>
+  </section>
+
+  <div id="rangeWarn" class="notice warn" role="status" aria-live="polite" hidden></div>
 
   <div class="servo-work">
     <section class="servo-joints" id="joints" aria-label="三个关节状态">
       <button class="joint-card" type="button" data-id="1" aria-pressed="true">
-        <div class="joint-head"><span class="joint-id">ID1</span><span class="pill" id="j1state">离线</span></div>
-        <div class="joint-pos" id="j1pos">----</div>
-        <div class="joint-meta">
+        <div class="joint-head"><span class="joint-id">ID1 · 肩</span><span class="pill" id="j1state">离线</span></div>
+        <div class="joint-pos" id="j1raw">----</div>
+        <div class="joint-q" id="j1q">q —</div>
+        <div class="joint-meta four">
           <span>电压 <b id="j1volt">—</b></span>
           <span>温度 <b id="j1temp">—</b></span>
           <span>负载 <b id="j1load">—</b></span>
+          <span>电流 <b id="j1cur">—</b></span>
         </div>
-        <div class="joint-safe" id="j1safe">安全区：未标定</div>
+        <div class="joint-safe" id="j1safe">未标定</div>
       </button>
       <button class="joint-card" type="button" data-id="2" aria-pressed="false">
-        <div class="joint-head"><span class="joint-id">ID2</span><span class="pill" id="j2state">离线</span></div>
-        <div class="joint-pos" id="j2pos">----</div>
-        <div class="joint-meta">
+        <div class="joint-head"><span class="joint-id">ID2 · 肘</span><span class="pill" id="j2state">离线</span></div>
+        <div class="joint-pos" id="j2raw">----</div>
+        <div class="joint-q" id="j2q">q —</div>
+        <div class="joint-meta four">
           <span>电压 <b id="j2volt">—</b></span>
           <span>温度 <b id="j2temp">—</b></span>
           <span>负载 <b id="j2load">—</b></span>
+          <span>电流 <b id="j2cur">—</b></span>
         </div>
-        <div class="joint-safe" id="j2safe">安全区：未标定</div>
+        <div class="joint-safe" id="j2safe">未标定</div>
       </button>
       <button class="joint-card" type="button" data-id="3" aria-pressed="false">
-        <div class="joint-head"><span class="joint-id">ID3</span><span class="pill" id="j3state">离线</span></div>
-        <div class="joint-pos" id="j3pos">----</div>
-        <div class="joint-meta">
+        <div class="joint-head"><span class="joint-id">ID3 · 腕</span><span class="pill" id="j3state">离线</span></div>
+        <div class="joint-pos" id="j3raw">----</div>
+        <div class="joint-q" id="j3q">q —</div>
+        <div class="joint-meta four">
           <span>电压 <b id="j3volt">—</b></span>
           <span>温度 <b id="j3temp">—</b></span>
           <span>负载 <b id="j3load">—</b></span>
+          <span>电流 <b id="j3cur">—</b></span>
         </div>
-        <div class="joint-safe" id="j3safe">安全区：未标定</div>
+        <div class="joint-safe" id="j3safe">未标定</div>
       </button>
     </section>
 
     <aside class="servo-side">
       <section class="card">
-        <h2>标定流程 · <span id="currentJoint">ID1</span></h2>
-        <p class="fine servo-current">当前选中 <b id="currentJoint2">ID1</b>。先点「刷新」，确认在线。</p>
+        <h2>标定向导 · <span id="currentJoint">ID1</span></h2>
+        <p class="fine servo-current">当前选中 <b id="currentJoint2">ID1</b>。建议顺序：腕 ID3 → 肘 ID2 → 肩 ID1。每一步都先确认在线。</p>
         <div class="step-list">
           <div class="step-row" data-step="1">
             <span class="step-num">1</span>
-            <div><b>选关节</b><p>建议先腕（ID3），再肘（ID2），最后肩（ID1）。</p></div>
+            <div><b>选关节</b><p>点左侧卡片选 ID；一次只标一个关节。</p></div>
             <span class="step-state" id="s1state">—</span>
           </div>
           <div class="step-row" data-step="2">
             <span class="step-num">2</span>
-            <div><b>卸力</b><p>手扶住手臂，再发 TORQUE OFF；12V 保持打开。</p></div>
+            <div><b>卸力</b><p>手扶住，发 <code>TORQUE &lt;id&gt; OFF</code>；12V 保持打开。</p></div>
             <button class="btn tiny" id="torqueOffBtn" type="button" disabled>卸力</button>
           </div>
           <div class="step-row" data-step="3">
             <span class="step-num">3</span>
-            <div><b>记录 raw 较小的端点</b><p>移到刻度较小的一端，点 MARK MIN；不一定是机械下限。</p></div>
-            <button class="btn tiny" id="markMinBtn" type="button" disabled>MARK MIN</button>
+            <div>
+              <b>参考姿态</b>
+              <p>把关节放在可复现的标记姿态，填该姿态的模型角 q（度），发 <code>CAL REF</code>。</p>
+              <label class="inline-field">q（度）<input id="refQ" type="number" inputmode="decimal" step="0.1" value="0" disabled></label>
+            </div>
+            <button class="btn tiny" id="calRefBtn" type="button" disabled>CAL REF</button>
+          </div>
+          <div class="step-row" data-step="3b">
+            <span class="step-num">4</span>
+            <div>
+              <b>方向</b>
+              <p>raw 增大时 q 增大选 <code>+1</code>，否则 <code>-1</code>；发 <code>CAL DIR</code>。</p>
+              <label class="inline-field">方向<select id="dirSign" disabled>
+                <option value="1">+1 · raw 增大 q 增大</option>
+                <option value="-1">-1 · raw 增大 q 减小</option>
+              </select></label>
+            </div>
+            <button class="btn tiny" id="calDirBtn" type="button" disabled>CAL DIR</button>
           </div>
           <div class="step-row" data-step="4">
-            <span class="step-num">4</span>
-            <div><b>记录 raw 较大的端点</b><p>移到刻度较大的一端，点 MARK MAX；MIN 必须小于 MAX。</p></div>
-            <button class="btn tiny" id="markMaxBtn" type="button" disabled>MARK MAX</button>
+            <span class="step-num">5</span>
+            <div><b>raw 较小端点</b><p>手移到刻度较小的一端，点 <code>CAL MARK MIN</code>；不一定是机械下限。</p></div>
+            <button class="btn tiny" id="markMinBtn" type="button" disabled>MARK MIN</button>
           </div>
           <div class="step-row" data-step="5">
-            <span class="step-num">5</span>
-            <div><b>上力</b><p>确认手臂在安全区内，再恢复力矩。</p></div>
+            <span class="step-num">6</span>
+            <div><b>raw 较大端点</b><p>手移到刻度较大的一端，点 <code>CAL MARK MAX</code>；MIN 必须小于 MAX。</p></div>
+            <button class="btn tiny" id="markMaxBtn" type="button" disabled>MARK MAX</button>
+          </div>
+          <div class="step-row" data-step="6">
+            <span class="step-num">7</span>
+            <div><b>保存标定</b><p>写 NVS 并退出标定模式；三个关节都有效才进入 READY。</p></div>
+            <button class="btn tiny" id="calSaveBtn" type="button" disabled>CAL SAVE</button>
+          </div>
+          <div class="step-row" data-step="7">
+            <span class="step-num">8</span>
+            <div><b>上力</b><p>确认手臂在安全区，再 <code>TORQUE all ON</code>；之后才允许 POSE。</p></div>
             <button class="btn tiny" id="torqueOnBtn" type="button" disabled>TORQUE ON</button>
           </div>
         </div>
-        <p class="fine servo-live">
-          <label><input type="checkbox" id="liveRead" checked> 实时读当前关节（约 0.9s，默认开）</label>
-        </p>
-        <p class="fine">MIN / MAX 是编码器 raw 刻度，不是机械上下限；如果方向相反，先 <b>CLEAR</b>，再按“raw 较小 → MIN、raw 较大 → MAX”重标。行程跨过 0/4095 时不能简单交换，见 <a href="../docs/teach/servo-basic.md">servo-basic.md §4.3</a>。</p>
+        <p id="wizMsg" class="fine" role="status" aria-live="polite">连接后先刷新，确认 3/3 在线。</p>
+        <button id="calClearBtn" class="btn danger wide" type="button" disabled>清除全部标定（CAL CLEAR all）</button>
+        <p class="fine">第一次 <code>CAL REF/DIR/MARK</code> 会进入 <b>CAL</b> 模式；CAL 下 <code>POSE</code> 和 <code>TORQUE ON</code> 都会被拒绝，必须保存或清除才能退出。未保存的编辑掉电丢失。</p>
       </section>
 
       <section class="card">
-        <h2>安全区内试动</h2>
-        <div class="safe-line" id="safeLine">未标定：MOVE 会被拒绝</div>
-        <div class="move-grid">
-          <label>目标刻度
-            <input id="target" type="number" inputmode="numeric" step="1" placeholder="safe 区间内" disabled>
-          </label>
-          <label>速度
-            <input id="speed" type="number" inputmode="numeric" min="1" max="600" step="1" value="250" disabled>
-          </label>
+        <h2>检测与维护</h2>
+        <dl class="detect-list">
+          <div><dt>固件</dt><dd id="fwInfo">—</dd></div>
+          <div><dt>标定有效</dt><dd id="calInfo">—</dd></div>
+          <div><dt>扭矩</dt><dd id="torqueInfo">—</dd></div>
+          <div><dt>最近错误</dt><dd id="errInfo">—</dd></div>
+        </dl>
+        <div class="detect-actions">
+          <button id="refreshBtn" class="btn wide" type="button" disabled>刷新状态 / 标定 / 限位</button>
+          <div class="btn-row">
+            <button id="readCalBtn" class="btn" type="button" disabled>读标定</button>
+            <button id="readLimitsBtn" class="btn" type="button" disabled>读限位</button>
+          </div>
+          <div class="btn-row">
+            <button id="stopBtn" class="btn" type="button" disabled>STOP</button>
+            <button id="estopBtn" class="btn dark" type="button" disabled>ESTOP</button>
+            <button id="clearBtn" class="btn" type="button" disabled>CLEAR</button>
+          </div>
         </div>
-        <button id="moveBtn" class="btn primary wide" type="button" disabled>发送 MOVE</button>
-        <button id="refreshBtn" class="btn wide" type="button" disabled>刷新状态</button>
-        <p class="fine">不会自动回位；先小范围试，再逐步扩大。位置取 safe 区间内。</p>
+        <p class="fine">STOP 保持最后目标；ESTOP 锁存，需 CLEAR；已标定时 CLEAR 还要求三舵机都在线。CLEAR 不会主动让关节运动。</p>
       </section>
 
       <section class="card">
-        <h2>清理与说明</h2>
-        <button id="clearBtn" class="btn wide" type="button" disabled>清除当前关节限位</button>
-        <p class="fine">换舵机、拆臂或换安装孔后必须重标。CLEAR 只清 NVS，不会让关节运动。</p>
+        <h2>低速端点测试 · <span id="testJoint">ID1</span></h2>
+        <p class="fine">只改当前关节的 q，其余关节保持当前实测角；速度固定 10°/s，20Hz 发 POSE，到位或超时自动 STOP。先扶住，随时按 STOP。</p>
+        <div class="safe-line" id="testSafe">标定/限位未就绪</div>
+        <div class="btn-row">
+          <button id="testMinBtn" class="btn" type="button" disabled>去 safe MIN</button>
+          <button id="testMaxBtn" class="btn" type="button" disabled>去 safe MAX</button>
+          <button id="testStopBtn" class="btn dark" type="button" disabled>停止测试</button>
+        </div>
+        <p id="testMsg" class="fine" role="status" aria-live="polite">标定完整且三舵机在线、扭矩 ON 后才可用。</p>
       </section>
     </aside>
   </div>
 
   <section class="card terminal-card servo-terminal" aria-label="串口日志">
     <div class="card-head">
-      <h2>串口日志</h2>
+      <h2>LT100P/1 串口日志</h2>
       <button id="clearLog" class="btn tiny dark" type="button">清空</button>
     </div>
     <div id="log" class="terminal" role="log" aria-live="polite"></div>
     <form id="sendForm" class="send-row">
       <span class="prompt" aria-hidden="true">&gt;</span>
-      <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="也可以直接发命令，例如 SCAN / LIMITS / READ 1" disabled aria-label="舵机命令">
+      <input id="cmd" type="text" autocomplete="off" spellcheck="false" placeholder="直接发命令，例如 STATE / CAL STATUS / LIMITS" disabled aria-label="LT100 命令">
       <button class="btn primary" type="submit" id="sendBtn" disabled>发送</button>
     </form>
     <div class="quick-row">
-      <button class="chip" type="button" data-cmd="SCAN">SCAN</button>
+      <button class="chip" type="button" data-cmd="HELLO">HELLO</button>
+      <button class="chip" type="button" data-cmd="STATE">STATE</button>
+      <button class="chip" type="button" data-cmd="CAL STATUS">CAL STATUS</button>
       <button class="chip" type="button" data-cmd="LIMITS">LIMITS</button>
-      <button class="chip" type="button" data-cmd="READ 1">READ 1</button>
-      <button class="chip" type="button" data-cmd="HELP">HELP</button>
     </div>
   </section>
 
   <section class="card help-card">
     <h2>第一次用</h2>
     <ol class="plain">
-      <li>板上烧录 <code>09_servo_basic</code>，12V 5A 接好<b>并打开</b>，USB-C 接电脑；手扶住手臂。</li>
-      <li>双击 <code>start-servo-console.bat</code>；它会同时启动本机串口桥并打开本页。</li>
-      <li>点「连接串口」；本机桥会自动打开 CP210x，不用手选 COM 口。桥不可用时才弹出 Web Serial 端口选择。</li>
-      <li>先点「刷新」看 3/3 在线；0/3 先查 12V、3P 线和 ID，不要继续标定。</li>
-      <li>选腕（ID3）→ 扶住 →「卸力」→ 手移到 <b>raw 较小</b> 的一端 →「MARK MIN」→ 移到 <b>raw 较大</b> 的一端 →「MARK MAX」→「TORQUE ON」。MIN 不一定是机械下限。</li>
-      <li>在 safe 区间内填一个目标，发 MOVE；用「刷新」或实时读数确认位置。</li>
+      <li>烧录 <code>09_servo_basic</code>（基于公版 <code>LT100Core</code>），12V 5A 接好并打开，USB-C 接电脑；手扶住手臂。</li>
+      <li>双击 <code>start-servo-console.bat</code>；它启动本机串口桥并打开本页。桥不可用时才回退 Web Serial。</li>
+      <li>点「连接串口」，确认 <b>3/3 在线</b>；0/3 先查 12V、3P 线和 ID 1/2/3。</li>
+      <li>选腕 ID3 → 扶住 →「卸力」→ 手移到参考姿态，填 q →「CAL REF」→ 选方向 →「CAL DIR」。</li>
+      <li>手移到 <b>raw 较小</b> 的一端 →「MARK MIN」；移到 <b>raw 较大</b> 的一端 →「MARK MAX」；「CAL SAVE」。</li>
+      <li>对 ID2、ID1 重复；三个关节都有效后，「TORQUE ON」→ 在「检测与维护」里刷新 → 用低速端点测试验证。</li>
     </ol>
-    <p class="fine">运行标定台时串口由本机桥占用；Arduino IDE 的串口监视器要先关掉，烧录前也要先关标定台。桥只监听 127.0.0.1，页面必须从 localhost 打开。连接优先走桥，桥不可用时才回退 Web Serial（Chrome / Edge 89+ 或 Firefox 151+）。<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
-    <p class="fine">完整原理、命令表和错误码：<a href="../docs/teach/servo-basic.md">docs/teach/servo-basic.md</a>；固件：<a href="../examples/09_servo_basic/09_servo_basic.ino">09_servo_basic.ino</a>。</p>
+    <p class="fine">标定台运行时会占用串口；Arduino IDE 的串口监视器要先关掉，烧录前也要先关标定台。桥只监听 127.0.0.1，页面必须从 localhost 打开。<code>?mock=1</code> 可模拟界面和命令流，不连硬件。</p>
+    <p class="fine">协议、字段和错误码：<a href="../docs/design/common-platform.md">common-platform.md §8</a> · <a href="../docs/teach/servo-basic.md">servo-basic.md</a>；固件：<a href="../examples/09_servo_basic/09_servo_basic.ino">09_servo_basic.ino</a>。</p>
   </section>
 </main>
 
 <footer class="wrap serial-footer">
-  LT100 · 舵机标定台 · <a href="index.html#servo">舵机原理</a> · <a href="serial.html">串口控制台</a>
+  LT100 · 公版标定与检测台 · <a href="index.html#servo">舵机原理</a> · <a href="serial.html">串口控制台</a>
 </footer>
 
-<script src="servo.js"></script>
+<script type="module" src="servo.js"></script>
 </body>
 </html>

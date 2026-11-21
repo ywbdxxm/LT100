@@ -22,11 +22,13 @@
   const supportsSerial = !!navigator.serial;
   const secure = window.isSecureContext;
   const isFile = location.protocol === 'file:';
-  const canUse = mock || (supportsSerial && secure && !isFile);
+  const canUse = mock || (secure && !isFile);
+  const bridgeUrl = 'ws://127.0.0.1:8771/serial';
 
   let port = null;
   let reader = null;
   let writer = null;
+  let bridge = null;
   let tearingDown = false;
   let closing = false;
   let sawRx = false;
@@ -133,6 +135,7 @@
 
   function describePort(target) {
     if (mock) return '演示串口 CP210x';
+    if (target && target.__bridge) return '本机串口桥 / CP210x';
     const info = target.getInfo ? target.getInfo() : {};
     const hex = (n) => Number(n).toString(16).padStart(4, '0');
     if (info.usbVendorId != null && info.usbProductId != null) {
@@ -213,9 +216,11 @@
     try { if (reader) await reader.cancel(); } catch (_) {}
     await sleep(30);
     try { if (writer) await writer.close(); } catch (_) {}
-    try { if (port) await port.close(); } catch (_) {}
+    try { if (bridge) bridge.close(); } catch (_) {}
+    try { if (port && !port.__bridge) await port.close(); } catch (_) {}
     reader = null;
     writer = null;
+    bridge = null;
     port = null;
     closing = false;
     tearingDown = false;
@@ -269,24 +274,97 @@
     }
   }
 
+  function openBridge() {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let buffer = '';
+      const ws = new WebSocket(bridgeUrl);
+      ws.binaryType = 'arraybuffer';
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        try { ws.close(); } catch (_) {}
+        reject(new Error('串口桥连接超时'));
+      }, 1600);
+
+      ws.onopen = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        bridge = ws;
+        port = { __bridge: true };
+        writer = {
+          async write(bytes) {
+            if (ws.readyState !== WebSocket.OPEN) throw new Error('串口桥已断开');
+            ws.send(decoder.decode(bytes));
+          },
+          async close() { try { ws.close(); } catch (_) {} },
+        };
+        ws.onmessage = (event) => {
+          const text = typeof event.data === 'string'
+            ? event.data
+            : decoder.decode(new Uint8Array(event.data));
+          buffer += text;
+          let newline;
+          while ((newline = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, newline).replace(/\r$/, '');
+            buffer = buffer.slice(newline + 1);
+            if (line.length) handleIncoming(line);
+          }
+          if (buffer.length > 4096) buffer = buffer.slice(-1024);
+        };
+        ws.onclose = () => {
+          if (!tearingDown && port) {
+            appendLog('sys', '本机串口桥断开');
+            teardown(false);
+          }
+        };
+        resolve();
+      };
+      ws.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(new Error('串口桥未启动'));
+      };
+      ws.onclose = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(new Error('串口桥未启动'));
+        }
+      };
+    });
+  }
+
   async function connect() {
     if (!canUse || port) return;
     setConnState('连接中…', 'busy');
     ui.connectBtn.disabled = true;
     try {
-      const selected = mock ? createMockPort() : await navigator.serial.requestPort();
-      port = selected;
-      await port.open({ baudRate: 115200 });
-      writer = port.writable.getWriter();
+      if (!mock) {
+        try {
+          await openBridge();
+          appendLog('sys', '已连接本机串口桥 ws://127.0.0.1:8771/serial');
+        } catch (bridgeError) {
+          appendLog('sys', `本机串口桥不可用：${bridgeError.message || bridgeError}；尝试 Web Serial`);
+        }
+      }
+      if (!port) {
+        if (!supportsSerial) throw new Error('本机桥不可用，且浏览器不支持 Web Serial');
+        const selected = mock ? createMockPort() : await navigator.serial.requestPort();
+        port = selected;
+        await port.open({ baudRate: 115200 });
+        writer = port.writable.getWriter();
+        readLoop();
+      }
       setPortInfo(describePort(port));
       setConnState('已连接', 'ok');
       setEnabled(true);
       setStream(false);
       sawRx = false;
       appendLog('sys', `已连接 ${describePort(port)} · 115200 8N1`);
-      readLoop();
-
-      await sleep(1200);
+      await sleep(mock ? 80 : 900);
       if (!port) return;
       await sendCommand('STREAM 0', { echo: false });
       await sendCommand('PING');
@@ -434,9 +512,6 @@
                 reply('ERR 02 stream must be 0 or 1');
               }
               break;
-            case 'SERVO':
-              reply('ERR 04 servo not enabled');
-              break;
             default:
               reply('ERR 01 unknown command');
           }
@@ -547,15 +622,15 @@
         message = '当前页面不是安全上下文。请用 http://127.0.0.1:8773/web/serial.html 或 HTTPS 打开。';
       }
       if (!supportsSerial) {
-        message += (message ? ' ' : '') + '这个浏览器不支持 Web Serial；请用 Chrome / Edge 89+，或 Firefox 151+；Safari 不支持。';
+        message += (message ? ' ' : '') + '这个浏览器不支持 Web Serial；优先使用本机串口桥（start-web-console.bat）。';
       }
       showSupport(message);
       ui.connectBtn.disabled = true;
     }
 
     appendLog('sys', canUse
-      ? '页面就绪。点击「连接串口」，选择 CP210x 的 COM 口。'
-      : '当前环境不能使用 Web Serial，请按上方提示打开页面。');
+      ? '页面就绪。点击「连接串口」，优先连接本机串口桥；桥不可用时再选 CP210x。'
+      : '当前环境不能使用串口，请按上方提示打开页面。');
   }
 
   init();

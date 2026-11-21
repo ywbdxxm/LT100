@@ -63,7 +63,8 @@ UART 没有时钟线，双方必须用同一个波特率。一个字节的线上
 | `TEXT <ascii>` | OLED 显示一行文字，5 秒 | `OK text=HELLO` |
 | `CLEAR` | 清除 TEXT | `OK text cleared` |
 | `STREAM 0\|1` | 每秒自动发一条 STAT | `OK stream=1` |
-| `SERVO ...` | 预留，后续接舵机 | `ERR 04 servo not enabled` |
+
+08 不接舵机；`SERVO` 在这里和其它未知命令一样回 `ERR 01`。舵机命令走 09 的 `LT100P/1`。
 
 `TEXT` 最多 20 个可打印 ASCII 字符，且不能包含双引号或反斜杠（方便 `STAT` 的 JSON 保持合法）。中文需要额外大字体，本阶段不做。
 
@@ -83,7 +84,7 @@ UART 没有时钟线，双方必须用同一个波特率。一个字节的线上
 | `01` | 未知命令 |
 | `02` | 参数缺失或格式不对 |
 | `03` | 数值越界 |
-| `04` | 功能未启用（目前是 SERVO） |
+| `04` | 保留（当前命令都直接可用；`SERVO` 按未知命令处理） |
 | `05` | 单行超过 96 字节 |
 
 `STAT` 示例：
@@ -130,32 +131,34 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 
 脚本用 `System.IO.Ports.SerialPort`，读超时 200ms；`STREAM` 每秒一条也能连续读。Ctrl+C 或输入 `quit` 退出，`finally` 会关闭端口。
 
-### 6.1 网页控制台（Web Serial）
+### 6.1 网页控制台（本机桥优先，Web Serial 回退）
 
 不想开 Arduino，也不想装串口工具时，用浏览器页面：
 
 ```text
 双击 start-web-console.bat
-  → 打开 http://127.0.0.1:8773/web/serial.html
+  → 启动本机串口桥（127.0.0.1:8771）并打开 http://127.0.0.1:8773/web/serial.html
   → 点「连接串口」
-  → 在浏览器弹窗里选 CP210x 的 COM 口
+  → 本机桥自动打开 CP210x；桥不可用时才弹出 Web Serial 端口选择
 ```
 
 页面提供：串口日志、命令输入、灯环模式、颜色、亮度、OLED 文字、`PING`/`INFO`/`STAT`/`STREAM` 快捷按钮，以及运行时间、空闲内存、收发计数等状态卡。
 
-- 需要 **Chrome / Edge 89+**，或 **Firefox 151+**；Safari 不支持。
-- Web Serial 要求安全上下文，所以必须从 `http://127.0.0.1` 或 HTTPS 打开，**不能直接双击 `serial.html`**。
-- `tools/web-console.ps1` 是本地静态服务器，`start-web-console.bat` 只是双击入口；不依赖 Python/Node。
+- **08 只做灯、OLED 和板子状态，不接舵机**；舵机标定/检测走 09 + [公版标定台](../../web/servo.html)。
+- 本机桥由 `start-web-console.bat` 的 `-Bridge` 启动，用 .NET `SerialPort`，不会遇到 Web Serial 的 `BufferOverrunError`；运行时会占用 COM 口。
+- Web Serial 回退需要 **Chrome / Edge 89+**，或 **Firefox 151+**；Safari 只能用本机桥。
+- 页面必须从 `http://127.0.0.1` 或 HTTPS 打开，**不能直接双击 `serial.html`**。
+- `tools/web-console.ps1` 是本地静态服务器 + 可选桥启动器；不依赖 Python/Node。
 - 页面支持 `serial.html?mock=1` 演示模式：不连真实串口，用页面模拟 08 的回复，方便预览 UI。
 - 同一时间只能有一个程序占用 COM 口；用网页控制台前先关掉 Arduino 串口监视器和 PowerShell 工具。
 
 ## 7. 实测
 
-- 编译：`353988 B / 27% flash`，`26028 B / 7% RAM`，exit 0。
+- 编译：`353928 B / 27% flash`，`26028 B / 7% RAM`，exit 0（移除 SERVO 占位后少了 60 B）。
 - 烧录：串口写入后 `Hash of data verified`。
-- 协议测试：`PING`、`INFO`、`STAT`、`MODE RAINBOW`、`COLOR`、`BRIGHT`、`TEXT`、`STREAM 1`、`STREAM 0`、`CLEAR` 均按预期；`SERVO` 返回 `ERR 04`，未知命令返回 `ERR 01`，120 字节超长行返回 `ERR 05`。
+- 协议测试：`PING`、`INFO`、`STAT`、`MODE RAINBOW`、`COLOR`、`BRIGHT`、`TEXT`、`STREAM 1`、`STREAM 0`、`CLEAR` 均按预期；未知命令（包括 `SERVO`）返回 `ERR 01`，120 字节超长行返回 `ERR 05`。删除 `SERVO` 占位后未重跑实板协议，只重编译。
 - 边界测试：`BRIGHT 41`、`COLOR XYZ`、`TEXT "bad"` 返回错误，`STAT` 确认之前的颜色/亮度没有被改掉。
-- 网页控制台用 `?mock=1` 验证了连接、PING/STAT、模式、颜色、亮度、TEXT、STREAM 和断开；真实 Web Serial 需要用户在浏览器弹窗里手动选串口。
+- 网页控制台用 `?mock=1` 验证了连接、PING/STAT、模式、颜色、亮度、TEXT、STREAM 和断开；本机桥代码路径复用了已实测的 `serial-bridge.ps1`，当前 CP210x 未连接，**未在 08 实板复测桥连接**。
 - `tools/web-console.ps1` 在 8773 端口实测：`/web/serial.html`、`/web/serial.js`、`/docs/teach/serial-console.md` 均返回 200。
 - 原始日志在 `LT100/.local/serial-test-08-*.log`，不进 git。
 
@@ -173,7 +176,7 @@ pwsh -File .\tools\serial-console.ps1 -Port COMx -Demo
 
 ## 9. 后续
 
-- `SERVO` 命令：接 UART1 和 `SMS_STS`；[09_servo_basic](servo-basic.md) 已实现读位置、逐关节 MIN/MAX 标定和受区间保护的 `MOVE`，下一步把命令并进 08。
+- **08 不接舵机**：08 只负责灯、OLED 和板子状态；舵机标定/检测走独立的 [09_servo_basic](servo-basic.md) + [公版标定台](../../web/servo.html)，协议是 `LT100P/1`。
 - 电脑端二进制帧流：OLED 当第二屏，灯环跟着画面变色。
 - PC 系统监控 / 音频频谱：电脑算 CPU、内存或 FFT，板子只负责显示和发光。
-- Web Serial 控制台已实现：`web/serial.html`，从 `start-web-console.bat` 启动。
+- 网页串口控制台已实现：`web/serial.html`，从 `start-web-console.bat` 启动；优先走本机串口桥，桥不可用才回退 Web Serial。

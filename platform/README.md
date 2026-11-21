@@ -9,8 +9,11 @@
 | 项 | 状态 |
 | --- | --- |
 | 协议/标定/限位/Core 状态机 | 已实现 |
+| 板级 HAL `LT100Board` | 已实现（SCServo 总线 / NVS / 时钟 / 串口行输入） |
+| 09_servo_basic 迁移 | 已改为公版薄 app，编译 351,573 B / 25,800 B |
 | Host 纯逻辑测试 | `all checks passed` |
-| ESP32 固件编译 | `arduino-cli compile --warnings all` 通过；351,521 B flash / 25,792 B RAM |
+| 网页协议模块测试 | `node --test platform/tests/web/lt100-protocol.test.mjs` 7/7 通过 |
+| ESP32 固件编译 | `arduino-cli compile` 通过；lamp 351,561 B flash / 25,800 B RAM |
 | 编译警告 | 本项目源码无警告；SCServo 1.0.2 的 `ReadMode` 有上游 `-Warray-bounds` 警告，本项目不调用该函数 |
 | 真板运动验证 | **未做**；当前只接了 ID1，ID2/3 离线，不能验证三关节 `POSE` |
 | 网页 SDK | 未开始 |
@@ -22,19 +25,27 @@
 
 ```text
 platform/
-├── firmware/
-│   ├── lt100_core/            # Arduino library: protocol/calibration/limits/core
+├── libraries/                 # Arduino 库根目录（--libraries 指向这里）
+│   ├── lt100_core/            # protocol/calibration/limits/core
 │   │   ├── library.properties
 │   │   └── src/
 │   │       ├── LT100Core.h
 │   │       └── lt100/*.h,*.cpp
-│   └── apps/
-│       └── lt100_lamp/        # 整机 sketch: SCServo HAL + NVS + OLED + 串口
+│   └── lt100_board/           # ESP32 HAL
+│       ├── library.properties
+│       └── src/LT100Board.h   # SCServo 总线 / Preferences NVS / 时钟 / 串口行读取
+├── apps/
+│   └── lt100_lamp/            # 整机 sketch: LT100Board + OLED + 串口
 └── tests/
-    └── host/
-        ├── host_tests.cpp     # 无 Arduino 依赖的 fake HAL 测试
-        └── run-tests.ps1      # MSVC vcvars64 构建 + 运行
+    ├── host/
+    │   ├── host_tests.cpp     # 无 Arduino 依赖的 fake HAL 测试
+    │   └── run-tests.ps1      # MSVC vcvars64 构建 + 运行
+    └── web/
+        └── lt100-protocol.test.mjs  # 网页协议模块 node:test
 ```
+
+`examples/09_servo_basic` 与 `apps/lt100_lamp` 一样，只写接线、OLED 和
+`LineReader`；标定、限位、扭矩和故障保护都在 `LT100Core` 里。
 
 ## 编译固件
 
@@ -43,9 +54,9 @@ platform/
 ```powershell
 arduino-cli compile `
   --fqbn esp32:esp32:esp32 `
-  --libraries ".\platform\firmware" `
+  --libraries ".\platform\libraries" `
   --build-path ".\.local\build-lt100-lamp" `
-  ".\platform\firmware\apps\lt100_lamp"
+  ".\platform\apps\lt100_lamp"
 ```
 
 `--libraries` 指向包含 `lt100_core/` 的父目录，Arduino CLI 会把 `lt100_core`
@@ -119,6 +130,6 @@ CLEAR
 ## 尚未实现
 
 - `PRESET`、`LED`、`EVT`、过温/掉压自动降额、力矩上限；
-- 网页 SDK / 2D 孪生 / 标定向导；
+- 网页 SDK / 2D 孪生（标定向导已在 `web/servo.html` 实现）；
 - 真板 HIL 脚本与 30 分钟连续运动记录；
 - 机械硬限位、弹簧/配重（学生改进项目）。

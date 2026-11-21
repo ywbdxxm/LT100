@@ -2,7 +2,7 @@
 
 - 版本：**v0.5（2026-11-20：采购状态与成本改为 30 套实付；方案仍是 11-18 定稿）**
 - 定位：**智能硬件教学教具**，不是对外销售的产品
-- 实物照片：[正面.jpg](../../实物图/正面.jpg) / [侧面.jpg](../../实物图/侧面.jpg)
+- 实物照片：[front.jpg](../../hardware/photos/front.jpg) / [side.jpg](../../hardware/photos/side.jpg)
 - 当前方案：**微雪 Servo Driver with ESP32 + 3×ST3215 + 24 灯 WS2812 环（板载 5V 限 40%）**
   - 不做 BH1750、不做编码器、不做 COB 调光；灯环做颜色/亮度/状态
 - 采购与接线：[build-bom.md](../build/bom.md)
@@ -234,7 +234,7 @@ USB-C ── 电脑（烧录/串口 115200）
 - 主控板板内 UART1：GPIO18=RX，GPIO19=TX。
 - 建议先用板载 Web UI 或 URT-2 在 PC 上验证 ID 和方向。
 - 上电先读位置、电压、温度；任何一只不在预期范围就进入安全姿态。
-- **2026-11-21 已落实到 09 例程**：每关节手动标定 MIN/MAX，存 NVS；`MOVE` 只接受 `[MIN+40, MAX-40]` 内的目标，未标定直接拒绝。机械硬限位仍待结构落实，软件限位不能替代它。
+- **2026-11-21 已落实到公版 `LT100Core`**：每关节 `CAL REF/DIR/MARK` 标定 zero/方向/raw 端点，存 NVS；`POSE` 只接受 `[MIN+40, MAX-40]` 内的目标，未标定直接拒绝。机械硬限位仍待结构落实，软件限位不能替代它。
 
 ### 5.2 固件功能（最小集）
 
@@ -465,7 +465,7 @@ BOM、实付单价、到货检查与接线图只维护一份：[build-bom.md](..
 - [build-bom.md](../build/bom.md) — 采购/接线/到货检查
 - [course-4h.md](../teach/course-4h.md) — 4 小时课（A 装配线 / B AI Agent 线）
 - [purchase-list.md](../build/purchase-list.md) — 30 套实付清单
-- [正面.jpg](../../实物图/正面.jpg) / [侧面.jpg](../../实物图/侧面.jpg) — 现状照片
+- [front.jpg](../../hardware/photos/front.jpg) / [side.jpg](../../hardware/photos/side.jpg) — 现状照片
 - [ST3215 官方参数](https://www.feetechrc.com/525603)
 - [DF57/DF57H 接口区别](https://www.anglia.com/registration/pcn_ptn/docs/pcn/PCN_DF57_28_03_13.pdf)
 
