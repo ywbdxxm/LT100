@@ -23,6 +23,9 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 ## 文档
 
 - 主设计（定位/架构/契约/实验/风险）：[docs/design/design.md](docs/design/design.md)
+- **公版设计**（共用底座/协议/标定/安全/测试）：[docs/design/common-platform.md](docs/design/common-platform.md)
+- **交互应用清单**（孪生/IK/覆盖/示教/灯效）：[docs/design/interactive-applications.md](docs/design/interactive-applications.md)
+- **公版固件**（构建/测试/标定与运动操作）：[platform/README.md](platform/README.md)
 - 采购与搭建（BOM/接线/到货检查/FAQ）：[docs/build/bom.md](docs/build/bom.md)
 - 4 小时课（A 装配线 / B AI Agent 线）：[docs/teach/course-4h.md](docs/teach/course-4h.md)
 - 运动学与力学（FK/IK、工作空间、力臂与电流、7 个实验）：[docs/teach/kinematics-and-force.md](docs/teach/kinematics-and-force.md)
@@ -31,13 +34,31 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
 - 自动下载对照实验（**内部排查记录**，学生不用看）：[docs/teach/flashing-crosscheck.md](docs/teach/flashing-crosscheck.md)，脚本 [tools/flash-probe.ps1](tools/flash-probe.ps1)
 - 串口控制台（UART/命令表/OLED/灯/主机工具）：[docs/teach/serial-console.md](docs/teach/serial-console.md)
 - 舵机基础（闭环/总线/逐关节标定/限位）：[docs/teach/servo-basic.md](docs/teach/servo-basic.md)
-- 网页串口控制台（Web Serial）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
+- 网页串口控制台（本机桥优先，Web Serial 回退）：[web/serial.html](web/serial.html)，双击 [start-web-console.bat](start-web-console.bat) 启动
 - 网页舵机标定台（扫描/卸力/MIN/MAX/安全区 MOVE）：[web/servo.html](web/servo.html)，双击 [start-servo-console.bat](start-servo-console.bat) 启动
 - 采购台账（30 套实付，¥4342.94）：[docs/build/purchase-list.md](docs/build/purchase-list.md)
 - 官方参考资料（手册/原理图/数据手册/例程）：[docs/reference/README.md](docs/reference/README.md)
 - 课程例程（按课次编号）：[examples/](examples/)
 - 现状照片：[实物图/正面.jpg](实物图/正面.jpg)、[实物图/侧面.jpg](实物图/侧面.jpg)
 - 结构打印件（14 个切片好的 3MF）：[结构/](结构/)
+
+## 目录
+
+```text
+LT100/
+├── docs/          设计、教学、采购、参考资料
+├── examples/      01–09 课程例程
+├── platform/      公版固件、整机 app、host 测试（新应用走这里）
+├── tools/         网页控制台、串口桥、烧录探针
+├── web/           现有课程页面（页面版）
+├── resources/     学生机离线 Arduino 包（约 2.2GB，本地保留、不进 git）
+├── 结构/          结构打印件
+├── 实物图/        实物照片
+├── flashing-report/  烧录对照报告（生成物，不进 git）
+└── .local/        本地日志、证据、构建缓存（不进 git）
+```
+
+`.local/` 里的构建目录可以随时删；日志、截图和标定/串口证据保留。
 
 ## 当前状态
 
@@ -46,6 +67,7 @@ USB-C ── 电脑（仅烧录/串口；12V 走板子的 DC 5.5×2.1 圆孔）
   1.25mm/SM2.54 转杜邦、杜邦线；工具两把胶枪 + 电动螺丝刀
 - **未装**：灯环、转接线、扩散片；灯环接口与线色已确认（见 BOM）
 - 灯罩内壁橙色；白色 PET 反光膜选装
+- **公版 Phase 0**：`lt100_core` + `lt100_lamp` 已实现，host 测试全过、固件编译通过；**未做三关节实板标定/运动验证**（当前只接了 ID1）。
 
 ## 后续升级（当前不做）
 
