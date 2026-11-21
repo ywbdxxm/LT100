@@ -59,6 +59,11 @@ LT100/
 
 `.local/` 里的构建目录可以随时删；日志、截图和标定/串口证据保留。
 
+> **学生分发包**在 `student-package/`（已加入 `.gitignore`）。`resources/` 已移入包内；
+> 工作区根的 `resources/` 只是指向包内 `resources/` 的目录联接，用来保留旧文档和网页的相对路径。
+> 学生包只带 08/09 的完整源码；01–07 每个文件夹只有 README 练习说明，没有 `.ino` 成品。
+> 详见 [student-package/README.md](student-package/README.md)。
+
 ## 当前状态
 
 - 结构 + 3×ST3215-C018 已装配（2026-11 实物见 `hardware/photos/`）
