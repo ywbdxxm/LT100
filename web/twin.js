@@ -1,19 +1,15 @@
-import { isSafeQ, loadMachine, safeModelRanges, toModelQ } from "./arm/machine.mjs";
+import { loadMachine, safeModelRanges, toModelQ } from "./arm/machine.mjs";
 import { fk } from "./arm/kinematics.mjs";
 import { createScene } from "./arm/scene.mjs";
 import { createRig } from "./arm/model.mjs";
-import { createMockTransport } from "./arm/mock.mjs";
-import {
-  parseCalLine,
-  parseError,
-  parseHello,
-  parseLimitsLine,
-  parseState,
-} from "./lt100-protocol.mjs";
+import { createTransport, evaluateGate } from "./arm/transport.mjs";
+import { createUi } from "./arm/ui.mjs";
 
 const $ = (id) => document.getElementById(id);
 const query = new URLSearchParams(location.search);
 const mockMode = query.get("mock") === "1";
+const fault = query.get("fault");
+const bridgeUrl = query.get("url") ?? "ws://127.0.0.1:8771/serial";
 
 const VIEWS = {
   front: { pos: [0, 300, 1180], target: [0, 250, 0] },
@@ -21,15 +17,22 @@ const VIEWS = {
   iso: { pos: [900, 520, 1150], target: [180, 230, 0] },
 };
 
+const DEFAULT_HINT = "M3 只读：不发送 POSE；STOP 与拖动留到 M4。";
+
 const state = {
   machine: null,
   target: [],
-  cals: [],
-  limits: [],
-  ranges: null,
   actual: [],
-  cards: [],
+  ranges: null,
+  solid: null,
+  ghost: null,
   transport: null,
+  ui: null,
+  connection: "未连接",
+  connectError: "",
+  phase: "idle",
+  retry: "connect",
+  hint: DEFAULT_HINT,
 };
 
 const fmt = (value, digits = 1) =>
@@ -42,69 +45,117 @@ function showFatal(message) {
   document.body.dataset.error = "1";
 }
 
-function buildCards() {
-  const names = ["J1 肩", "J2 肘", "J3 腕"];
-  return names.map((name) => {
-    const card = document.createElement("div");
-    card.className = "joint";
-    card.innerHTML =
-      `<div class="joint-head"><span>${name}</span><span class="chip" data-chip>—</span></div>` +
-      `<div class="line"><span>目标</span><b data-target>—</b></div>` +
-      `<div class="line"><span>实际</span><b data-actual>—</b></div>` +
-      `<div class="bar"><span class="zone" data-zone></span><i class="marker" data-marker></i></div>`;
-    $("joints").append(card);
-    return {
-      chip: card.querySelector("[data-chip]"),
-      target: card.querySelector("[data-target]"),
-      actual: card.querySelector("[data-actual]"),
-      zone: card.querySelector("[data-zone]"),
-      marker: card.querySelector("[data-marker]"),
-    };
+function readout(machine, target, actual) {
+  const targetPose = fk(machine, target);
+  const actualPose = fk(machine, actual);
+  return {
+    targetXy: `${fmt(targetPose.lamp.x)}, ${fmt(targetPose.lamp.y)} mm`,
+    errorMm: `${fmt(
+      Math.hypot(
+        targetPose.lamp.x - actualPose.lamp.x,
+        targetPose.lamp.y - actualPose.lamp.y
+      ),
+      2
+    )} mm`,
+    psi: `${fmt(targetPose.psi)}°`,
+  };
+}
+
+function refresh() {
+  const { machine, transport } = state;
+  if (!machine || !transport) return;
+
+  const hello = transport.getHello();
+  const snapshot = transport.getState();
+  const stateAt = transport.getStateAt();
+  const cals = transport.getCals();
+  const limits = transport.getLimits();
+  const ranges = safeModelRanges(cals, limits, machine);
+  state.ranges = ranges;
+
+  if (snapshot && cals.length === 3 && cals.every((cal) => cal?.valid)) {
+    try {
+      state.actual = toModelQ(snapshot.q, cals, machine);
+    } catch {}
+  }
+  if (!mockMode) state.target = [...state.actual];
+
+  state.solid?.setPose(state.target);
+  state.ghost?.setPose(state.actual);
+
+  let gate = evaluateGate({
+    machine,
+    hello,
+    state: snapshot,
+    stateAt,
+    now: performance.now(),
+    cals,
+    limits,
+    ranges,
+  });
+  if (state.phase === "idle") gate = { ready: false, missing: ["未连接串口"] };
+
+  const error = transport.getLastError();
+  let hint = state.hint;
+  if (state.phase === "idle") {
+    hint = "默认不自动连接：点「连接串口」开始只读连接。";
+  } else if (state.phase === "connecting") {
+    hint = "正在连接串口…";
+  } else if (state.connectError) {
+    hint = `连接失败：${state.connectError}`;
+  } else if (error) {
+    hint = `固件 ERR ${error.code} ${error.msg}；M3 只读，未发送 POSE`;
+  } else if (gate.ready) {
+    hint = "门禁通过 · M3 只读（不发送 POSE）";
+  } else if (snapshot) {
+    hint = `门禁未通过（缺 ${gate.missing.length} 项）：${gate.missing[0]}`;
+  }
+
+  state.ui.update({
+    connection: state.connection,
+    state: snapshot,
+    target: state.target,
+    actual: state.actual,
+    ranges,
+    gate,
+    readout: snapshot
+      ? readout(machine, state.target, state.actual)
+      : { targetXy: "—", errorMm: "—", psi: "—" },
+    readOnly: true,
+    hint,
+    retry: state.retry,
   });
 }
 
-function updateCards() {
-  state.cards.forEach((card, i) => {
-    card.target.textContent = fmt(state.target[i]);
-    card.actual.textContent = fmt(state.actual[i]);
-    const range = state.ranges?.[i];
-    if (!range) {
-      card.zone.style.width = "0%";
-      card.chip.textContent = "不可用";
-      card.chip.className = "chip bad";
-      return;
-    }
-    const pad = Math.max(8, (range.max - range.min) * 0.15);
-    const lo = range.min - pad;
-    const hi = range.max + pad;
-    const span = hi - lo;
-    card.zone.style.left = `${((range.min - lo) / span) * 100}%`;
-    card.zone.style.width = `${((range.max - range.min) / span) * 100}%`;
-    const percent = ((state.actual[i] - lo) / span) * 100;
-    card.marker.style.left = `${Math.min(100, Math.max(0, percent))}%`;
-    const safe = isSafeQ(state.actual, state.ranges);
-    card.chip.textContent = safe ? "safe" : "越界";
-    card.chip.className = `chip ${safe ? "ok" : "bad"}`;
-  });
-}
-
-function updateReadout() {
-  const targetPose = fk(state.machine, state.target);
-  const actualPose = fk(state.machine, state.actual);
-  $("target-xy").textContent = `${fmt(targetPose.lamp.x)}, ${fmt(targetPose.lamp.y)} mm`;
-  const error = Math.hypot(
-    targetPose.lamp.x - actualPose.lamp.x,
-    targetPose.lamp.y - actualPose.lamp.y
-  );
-  $("error-mm").textContent = `${fmt(error, 2)} mm`;
-  $("psi").textContent = `${fmt(targetPose.psi)}°`;
+async function connectBridge() {
+  state.phase = "connecting";
+  state.connection = "连接中…";
+  state.connectError = "";
+  state.retry = false;
+  refresh();
+  try {
+    await state.transport.connect();
+    state.phase = "connected";
+    state.connection = mockMode ? "已连接（mock）" : "已连接（真板）";
+    state.hint = DEFAULT_HINT;
+  } catch (error) {
+    state.phase = "failed";
+    state.connectError = error.message;
+    state.connection = "连接失败（桥被占用或未启动）";
+    state.retry = "retry";
+  }
+  refresh();
 }
 
 async function boot() {
   state.machine = await loadMachine();
   state.target = state.machine.joints.map((joint) => joint.model_ref_q);
   state.actual = [...state.target];
-  state.cards = buildCards();
+  state.ui = createUi({
+    onStop: () => state.transport?.stop(),
+    onRetry: () => connectBridge(),
+  });
+  $("mode-badge").textContent = mockMode ? "mock" : "real";
 
   let scene;
   try {
@@ -114,66 +165,27 @@ async function boot() {
     return;
   }
 
-  const solid = createRig(state.machine);
-  const ghost = createRig(state.machine, { ghost: true, beam: true });
-  scene.scene.add(solid.group, ghost.group);
-  solid.setPose(state.target);
-  ghost.setPose(state.actual);
+  state.solid = createRig(state.machine);
+  state.ghost = createRig(state.machine, { ghost: true, beam: true });
+  scene.scene.add(state.solid.group, state.ghost.group);
+  state.solid.setPose(state.target);
+  state.ghost.setPose(state.actual);
 
-  const refreshRanges = () => {
-    state.ranges = safeModelRanges(state.cals, state.limits, state.machine);
-    updateCards();
-  };
-
-  const onLine = (line) => {
-    if (parseHello(line)) {
-      $("conn").textContent = "已连接（mock）";
-      return;
-    }
-    const cal = parseCalLine(line);
-    if (cal && cal.id >= 1 && cal.id <= 3) {
-      state.cals[cal.id - 1] = cal;
-      refreshRanges();
-      return;
-    }
-    const limit = parseLimitsLine(line);
-    if (limit && limit.id >= 1 && limit.id <= 3) {
-      state.limits[limit.id - 1] = limit;
-      refreshRanges();
-      return;
-    }
-    const snapshot = parseState(line);
-    if (snapshot) {
-      $("mode").textContent = snapshot.mode;
-      $("volt").textContent = `${fmt(snapshot.v / 10)} V`;
-      $("age").textContent = `${snapshot.age ?? "—"} ms`;
-      if (state.cals.length === 3 && state.cals.every((item) => item?.valid)) {
-        state.actual = toModelQ(snapshot.q, state.cals, state.machine);
-        ghost.setPose(state.actual);
-        updateReadout();
-        updateCards();
-      }
-      return;
-    }
-    const error = parseError(line);
-    if (error) $("hint").textContent = `ERR ${error.code} ${error.msg}`;
-  };
-
-  if (mockMode) {
-    const transport = createMockTransport(state.machine);
-    state.transport = transport;
-    transport.onLine(onLine);
-    await transport.connect();
-    transport.send("HELLO");
-    transport.send("STREAM ON");
-    transport.send("CAL STATUS");
-    transport.send("LIMITS");
-    transport.send("STATE");
-  } else {
-    $("conn").textContent = "未连接（M2 仅 mock）";
-    $("hint").textContent =
-      "M2 是 mock 版本：打开 twin.html?mock=1&auto 查看孪生；真板只读连接在 M3。";
-  }
+  state.transport = createTransport({
+    url: bridgeUrl,
+    mock: mockMode,
+    machine: state.machine,
+    fault,
+  });
+  state.transport.onLine(() => refresh());
+  state.transport.onDisconnect(() => {
+    state.phase = "disconnected";
+    state.connection = "连接断开";
+    state.connectError = "";
+    state.hint = "串口桥断开，请点重试连接";
+    state.retry = "retry";
+    refresh();
+  });
 
   let currentView = "iso";
   let narrow = false;
@@ -205,23 +217,22 @@ async function boot() {
 
   window.addEventListener("resize", () => {
     const stage = $("stage");
-    const nextNarrow = (stage.clientWidth || 1) / (stage.clientHeight || 1) < 0.7;
+    const nextNarrow =
+      (stage.clientWidth || 1) / (stage.clientHeight || 1) < 0.7;
     if (nextNarrow !== narrow) applyView(currentView);
   });
-
-  $("stop").addEventListener("click", () => {
-    state.transport?.send("STOP");
-    $("hint").textContent = "已发送 STOP";
-  });
-
-  updateCards();
-  updateReadout();
 
   const loop = () => {
     if (!document.hidden) scene.render();
     requestAnimationFrame(loop);
   };
   loop();
+  refresh();
+  if (mockMode && query.get("auto") !== null) {
+    await connectBridge();
+  }
+  setInterval(refresh, 200);
+
   requestAnimationFrame(() => {
     document.body.dataset.ready = "1";
   });
