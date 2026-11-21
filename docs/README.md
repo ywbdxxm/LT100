@@ -11,7 +11,7 @@ docs/
 ├── build/            采购与搭建
 │   ├── bom.md
 │   └── purchase-list.md
-├── plans/            已完成的实施计划（存档，不是当前规格）
+├── plans/            实施计划（含 active 3D 孪生；旧计划为存档）
 ├── teach/            教学
 │   ├── course-4h.md
 │   ├── arduino-env.md
@@ -42,6 +42,7 @@ docs/
 | [teach/kinematics-and-force.md](teach/kinematics-and-force.md) | 3R 平面臂运动学（FK/IK/工作空间/误差）+ 静力学（力臂/电流/柔顺）+ 7 个课堂实验 | 备物理课、讲原理 |
 | [teach/serial-console.md](teach/serial-console.md) | 串口控制台：UART 参数、命令表、OLED/灯行为、主机工具 | 学串口、改命令 |
 | [teach/servo-basic.md](teach/servo-basic.md) | 舵机基础：闭环、总线、逐关节标定与限位、09 公版例程与网页标定台 | 学舵机、标定限位 |
+| [plans/2026-11-22-3d-twin.md](plans/2026-11-22-3d-twin.md) | **A1 3D 孪生实施计划（active）**：M1–M5、文件/接口、测试与停点 | 执行/审阅 3D 孪生 |
 | [plans/2026-11-21-serial-console.md](plans/2026-11-21-serial-console.md) | 08 串口控制台的实施计划（历史存档；当前规格看 design/teach） | 追溯当时怎么做的 |
 | [reference/README.md](reference/README.md) | 官方原件清单、来源与哈希 | 查一手资料 |
 

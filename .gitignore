@@ -9,6 +9,9 @@ resources/
 # generated student distribution package (~2.4 GB)
 student-package/
 
+# archived student package
+/student-package*.rar
+
 # editor / temporary backups
 *.bak
 
