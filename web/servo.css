@@ -57,6 +57,8 @@
 .btn-row .btn{flex:1 1 0;min-width:0}
 .btn.danger{background:#fff6f5;border-color:#f0b9b3;color:#b42318}
 .btn.danger:hover:not(:disabled){background:#ffeceb;border-color:#e59b93;color:#8f1c12}
+.btn.danger.armed{background:#b42318;border-color:#8f1c12;color:#fff;font-weight:600}
+.btn.danger.armed:hover:not(:disabled){background:#8f1c12;border-color:#7a170f;color:#fff}
 
 @media (max-width:680px){
   .btn{min-height:44px}

@@ -60,7 +60,14 @@ try {
         $context = $listener.GetContext()
         try {
             $requestPath = [Uri]::UnescapeDataString($context.Request.Url.AbsolutePath.TrimStart('/'))
-            if ([string]::IsNullOrWhiteSpace($requestPath)) { $requestPath = "web/$Page" }
+            if ([string]::IsNullOrWhiteSpace($requestPath)) {
+                # Root serves a redirect so the portal's relative asset links
+                # (style.css, twin.html, ...) resolve under /web/.
+                $context.Response.StatusCode = 302
+                $context.Response.RedirectLocation = "/web/$Page"
+                $context.Response.Close()
+                continue
+            }
             $fullPath = [System.IO.Path]::GetFullPath((Join-Path $root $requestPath))
 
             if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {

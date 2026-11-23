@@ -299,7 +299,7 @@
               <ul>
                 <li><span class="dir">01_blink_rgb/</span><span class="what">第一个例程：板载 RGB 闪烁</span>
                   <ul>
-                    <li><span class="file">01_blink_rgb.ino</span><span class="what">GPIO23 红蓝交替，先确认编译烧录链路</span></li>
+                    <li><span class="file">01_blink_rgb.ino</span><span class="what">GPIO23 循环闪红/绿/蓝，先确认编译烧录链路</span></li>
                   </ul>
                 </li>
                 <li><span class="dir">02_rainbow_breathe/</span><span class="what">进阶：双灯呼吸彩虹</span>
@@ -667,7 +667,7 @@
       <div class="n">4</div>
       <div>
         <h3>上传，看现象</h3>
-        <p>点左上角 <b>→</b>（或 <code>Ctrl+U</code>）上传，第一次编译约 1–2 分钟。看到 <code>Done uploading</code> 后，两颗灯红蓝交替亮 0.4 秒、灭 0.2 秒；只点板载灯，USB 供电就够。</p>
+        <p>点左上角 <b>→</b>（或 <code>Ctrl+U</code>）上传，第一次编译约 1–2 分钟。看到 <code>Done uploading</code> 后，两颗灯循环闪红、绿、蓝，每种亮 0.4 秒、灭 0.2 秒；只点板载灯，USB 供电就够。</p>
         <p>失败先关串口监视器；还失败就把 <code>Tools → Upload Speed</code> 降到 115200 再试。ESP32 Dev Module 默认上传是 <b>921600</b>；串口监视器的 115200 是应用串口，两者不是同一个波特率。</p>
         <p><b>一直卡在 <code>Connecting...</code>：</b>按住 <b>BOOT</b>（KEY_FLASH/IO0）点上传，保持到 <code>Connecting...</code> 或开始写入后再松开；还连不上就保持 BOOT 点一下 <b>EN</b>（复位），再试上传。上传完按一下 EN 运行。课堂烧录统一由人用 IDE 完成，agent 不用 CLI 代烧。能按 BOOT 烧进去就说明板子、USB 串口和 Flash 都正常。烧录只需要 USB，12V 可以先关掉。</p>
         <p class="res"><a href="../docs/teach/flashing.md">docs\teach\flashing.md</a>：完整烧录流程、921600、自动下载失败与手动 BOOT。</p>

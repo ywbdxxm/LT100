@@ -472,7 +472,7 @@
   function createMockPort() {
     const state = {
       up: Date.now(), mode: 'SOLID', color: '#FF6600', bright: 20,
-      text: '', stream: false, timer: 0, rx: 0, tx: 0, cmds: 0,
+      text: '', stream: false, echo: false, timer: 0, rx: 0, tx: 0, cmds: 0,
     };
     let controller = null;
     let closed = false;
@@ -485,7 +485,8 @@
     const statLine = () => JSON.stringify({
       type: 'stat', up_ms: Date.now() - state.up, heap: 321452,
       rx: state.rx, tx: state.tx, cmds: state.cmds,
-      mode: state.mode, color: state.color, bright: state.bright, text: state.text,
+      mode: state.mode, color: state.color, bright: state.bright,
+      echo: state.echo ? 1 : 0, text: state.text,
     });
     const reply = (line) => emit(line);
 
@@ -503,16 +504,37 @@
           const [head, ...rest] = command.split(/\s+/);
           const arg = rest.join(' ');
           switch (head.toUpperCase()) {
-            case 'HELP':
-              reply('OK commands: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM');
+            case 'HELP': {
+              const topics = {
+                HELP: 'OK HELP [CMD] - list commands or explain one',
+                PING: 'OK PING - round trip, replies PONG <ms>',
+                INFO: 'OK INFO - chip, mac, flash, sdk, heap, build',
+                STAT: 'OK STAT - uptime, heap, rx/tx, mode, colour, bright',
+                MODE: 'OK MODE SOLID|RAINBOW|BREATHE|OFF',
+                COLOR: 'OK COLOR RRGGBB or RED/GREEN/BLUE/ORANGE/WHITE/...',
+                BRIGHT: 'OK BRIGHT 0..40 (percent of the 5V budget)',
+                TEXT: 'OK TEXT <ascii> - 20 chars on the OLED for 5 s',
+                CLEAR: 'OK CLEAR - drop the TEXT line',
+                STREAM: 'OK STREAM 0|1 - one STAT per second',
+                ECHO: 'OK ECHO 0|1 - echo typed characters back',
+              };
+              const topic = arg.trim().toUpperCase();
+              if (!topic) {
+                reply('OK cmds: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM ECHO');
+              } else if (topics[topic]) {
+                reply(topics[topic]);
+              } else {
+                reply('ERR 02 no help for that command');
+              }
               break;
+            }
             case 'PING':
               reply(`PONG ${Date.now() - state.up}`);
               break;
             case 'INFO':
               reply(JSON.stringify({
                 type: 'info', chip: 'ESP32-D0WD-V3', mac: 'AABBCCDDEEFF',
-                flash: 4194304, sdk: 'v6.1.1', heap: 321452,
+                flash: 4194304, sdk: 'v6.1.1', heap: 321452, built: 'mock',
               }));
               break;
             case 'STAT':
@@ -529,9 +551,15 @@
               break;
             }
             case 'COLOR': {
-              const hex = arg.replace(/^#/, '');
+              const palette = {
+                RED: 'FF0000', GREEN: '00FF00', BLUE: '0000FF', YELLOW: 'FFFF00',
+                CYAN: '00FFFF', MAGENTA: 'FF00FF', ORANGE: 'FF6600', WHITE: 'FFFFFF',
+                PURPLE: 'A000FF', OFF: '000000',
+              };
+              const named = palette[arg.trim().toUpperCase()];
+              const hex = (named || arg).replace(/^#/, '');
               if (!/^[0-9a-f]{6}$/i.test(hex)) {
-                reply('ERR 02 color must be RRGGBB');
+                reply('ERR 02 color must be RRGGBB or a named colour');
               } else {
                 state.color = '#' + hex.toUpperCase();
                 state.mode = 'SOLID';
@@ -563,6 +591,17 @@
               state.text = '';
               reply('OK text cleared');
               break;
+            case 'ECHO':
+              if (arg === '1') {
+                state.echo = true;
+                reply('OK echo=1');
+              } else if (arg === '0') {
+                state.echo = false;
+                reply('OK echo=0');
+              } else {
+                reply('ERR 02 echo must be 0 or 1');
+              }
+              break;
             case 'STREAM':
               if (arg === '1') {
                 state.stream = true;
@@ -577,8 +616,14 @@
                 reply('ERR 02 stream must be 0 or 1');
               }
               break;
-            default:
-              reply('ERR 01 unknown command');
+            default: {
+              const known = ['HELP', 'PING', 'INFO', 'STAT', 'MODE', 'COLOR',
+                'BRIGHT', 'TEXT', 'CLEAR', 'STREAM', 'ECHO'];
+              const hint = known.find((name) => name.startsWith(head.toUpperCase().slice(0, 3)));
+              reply(hint
+                ? `ERR 01 unknown '${head.slice(0, 16)}' - did you mean ${hint}?`
+                : `ERR 01 unknown '${head.slice(0, 16)}' (HELP)`);
+            }
           }
         }, 80);
       },

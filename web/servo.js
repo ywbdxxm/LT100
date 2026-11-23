@@ -780,7 +780,14 @@ function updateButtons() {
   $("disconnectBtn").disabled = !connected || busy;
   for (const id of ["calClearBtn", "readCalBtn", "readLimitsBtn", "refreshBtn", "stopBtn", "estopBtn", "clearBtn"]) {
     const el = $(id);
-    if (el) el.disabled = !enabled;
+    if (!el) continue;
+    el.disabled = !enabled;
+    // Why a button is grey matters: a disabled control with no hint reads as "broken".
+    el.title = enabled
+      ? ""
+      : !connected
+        ? "先点「连接串口」，连上之后这个按钮才能用"
+        : "上一条命令还在等回复，稍等一下";
   }
   const selCal = cals[selected - 1];
   const hasEdit = Boolean(selCal?.valid || selCal?.ref || selCal?.hasMin || selCal?.hasMax);
@@ -1002,14 +1009,42 @@ async function doCalSave() {
   });
 }
 
+// Two-step confirm inside the page instead of window.confirm(): browsers silently
+// return false once dialogs are suppressed, which made the button look dead.
+let clearArmed = false;
+let clearArmTimer = 0;
+
+function disarmCalClear() {
+  clearArmed = false;
+  clearTimeout(clearArmTimer);
+  const el = $("calClearBtn");
+  if (!el) return;
+  el.textContent = "清除全部标定（CAL CLEAR all）";
+  el.classList.remove("armed");
+}
+
 async function doCalClear() {
-  if (!confirm("清除全部标定？这会让固件进入未标定状态，POSE 会被拒绝。")) return;
+  if (!clearArmed) {
+    clearArmed = true;
+    const el = $("calClearBtn");
+    if (el) {
+      el.textContent = "再点一次确认：清除三关节标定";
+      el.classList.add("armed");
+    }
+    appendLog("sys", "确认中：5 秒内再点一次才会发 CAL CLEAR all");
+    setWizard("再点一次「清除全部标定」才会真的执行；清完三个关节都要重标，POSE 会被拒绝。");
+    clearArmTimer = setTimeout(disarmCalClear, 5000);
+    return;
+  }
+  disarmCalClear();
+  appendLog("sys", "发送 CAL CLEAR all");
   await run(async () => {
     await request(calClearCommand(0), (p) => isOk(p, "cal_cleared"));
     unloaded = [false, false, false];
     dirSet = [false, false, false];
     await refreshAll();
     setPanel("calibrate");
+    appendLog("sys", "固件已确认清除：三关节 valid=0，需要重新标定");
     setWizard("标定已清除；需要重新标定三个关节。");
   });
 }
@@ -2079,7 +2114,10 @@ class MockLink {
 bind();
 if (mock) {
   $("mockBadge").hidden = false;
-  appendLog("sys", "模拟模式：?mock=1，不连硬件");
+  $("mockBadge").title =
+    "这是 ?mock=1 的模拟页面，不连硬件；要看真机请打开不带 mock 的 servo.html，再点「连接串口」";
+  appendLog("sys", "模拟模式：?mock=1，不连硬件；点「连接串口」进入模拟");
+
   if (autoConnect) setTimeout(connect, 250);
 }
 render();
