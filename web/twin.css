@@ -92,6 +92,23 @@ body {
   min-height: 55vh;
 }
 
+#stage-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(58% 52% at 46% 36%, rgba(255, 176, 96, 0.16), transparent 70%);
+  mix-blend-mode: screen;
+}
+
+#stage-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 92% at 50% 44%, transparent 52%, rgba(0, 0, 0, 0.34) 100%);
+}
+
 #stage {
   position: absolute;
   inset: 0;
