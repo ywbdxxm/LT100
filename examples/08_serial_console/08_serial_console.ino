@@ -21,7 +21,7 @@ constexpr uint8_t W = 128;
 constexpr uint8_t H = 32;
 constexpr uint8_t MAX_LINE = 96;
 constexpr uint8_t MAX_TEXT = 20;
-constexpr uint8_t MAX_RESP = 192;
+constexpr uint8_t MAX_RESP = 224;
 constexpr uint8_t BRIGHT_MAX = 40;
 constexpr uint32_t OLED_MS = 50;
 constexpr uint32_t LED_MS = 33;
@@ -46,6 +46,7 @@ uint32_t rxFlashUntil = 0, txFlashUntil = 0;
 uint32_t bootAt = 0, lastOled = 0, lastLed = 0, lastStream = 0;
 uint16_t hue = 0;
 bool streamOn = false;
+bool echoOn = false;
 
 const char *modeName(LedMode m) {
   if (m == MODE_SOLID) return "SOLID";
@@ -61,6 +62,15 @@ bool ieq(const char *a, const char *b) {
     b++;
   }
   return *a == 0 && *b == 0;
+}
+
+bool startsWithNoCase(const char *text, const char *prefix, size_t maxLen) {
+  for (size_t i = 0; i < maxLen; i++) {
+    if (prefix[i] == 0) return true;
+    if (text[i] == 0) return false;
+    if (tolower((unsigned char)text[i]) != tolower((unsigned char)prefix[i])) return false;
+  }
+  return true;
 }
 
 bool parseInt(const char *s, long &v) {
@@ -111,11 +121,11 @@ void sendInfo() {
   uint64_t mac = ESP.getEfuseMac();
   char buf[224];
   snprintf(buf, sizeof(buf),
-           "{\"type\":\"info\",\"chip\":\"%s\",\"mac\":\"%04X%08X\",\"flash\":%u,\"sdk\":\"%s\",\"heap\":%u}",
+           "{\"type\":\"info\",\"chip\":\"%s\",\"mac\":\"%04X%08X\",\"flash\":%u,\"sdk\":\"%s\",\"heap\":%u,\"built\":\"%s\"}",
            ESP.getChipModel(),
            (unsigned)((mac >> 32) & 0xFFFF), (unsigned)(mac & 0xFFFFFFFF),
            (unsigned)ESP.getFlashChipSize(), ESP.getSdkVersion(),
-           (unsigned)ESP.getFreeHeap());
+           (unsigned)ESP.getFreeHeap(), __DATE__ " " __TIME__);
   reply(buf);
 }
 
@@ -125,11 +135,11 @@ void sendStat(bool asReply, uint32_t now) {
   snprintf(buf, sizeof(buf),
            "{\"type\":\"stat\",\"up_ms\":%lu,\"heap\":%u,\"rx\":%lu,\"tx\":%lu,"
            "\"cmds\":%lu,\"mode\":\"%s\",\"color\":\"#%02X%02X%02X\","
-           "\"bright\":%u,\"text\":\"%s\"}",
+           "\"bright\":%u,\"echo\":%u,\"text\":\"%s\"}",
            (unsigned long)now, (unsigned)ESP.getFreeHeap(),
            (unsigned long)rxBytes, (unsigned long)txBytes, (unsigned long)cmdCount,
            modeName(mode), (unsigned)colorR, (unsigned)colorG, (unsigned)colorB,
-           (unsigned)bright, text);
+           (unsigned)bright, (unsigned)echoOn, text);
   if (asReply) reply(buf);
   else sendRaw(buf);
 }
@@ -153,7 +163,22 @@ void handleLine(char *line) {
   }
 
   if (ieq(p, "HELP")) {
-    reply("OK commands: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM");
+    if (!arg || !*arg) {
+      reply("OK cmds: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM ECHO");
+      return;
+    }
+    if (ieq(arg, "HELP")) reply("OK HELP [CMD] - list commands or explain one");
+    else if (ieq(arg, "PING")) reply("OK PING - round trip, replies PONG <ms>");
+    else if (ieq(arg, "INFO")) reply("OK INFO - chip, mac, flash, sdk, heap, build");
+    else if (ieq(arg, "STAT")) reply("OK STAT - uptime, heap, rx/tx, mode, colour, bright");
+    else if (ieq(arg, "MODE")) reply("OK MODE SOLID|RAINBOW|BREATHE|OFF");
+    else if (ieq(arg, "COLOR")) reply("OK COLOR RRGGBB or RED/GREEN/BLUE/ORANGE/WHITE/...");
+    else if (ieq(arg, "BRIGHT")) reply("OK BRIGHT 0..40 (percent of the 5V budget)");
+    else if (ieq(arg, "TEXT")) reply("OK TEXT <ascii> - 20 chars on the OLED for 5 s");
+    else if (ieq(arg, "CLEAR")) reply("OK CLEAR - drop the TEXT line");
+    else if (ieq(arg, "STREAM")) reply("OK STREAM 0|1 - one STAT per second");
+    else if (ieq(arg, "ECHO")) reply("OK ECHO 0|1 - echo typed characters back");
+    else reply("ERR 02 no help for that command");
     return;
   }
   if (ieq(p, "PING")) {
@@ -185,9 +210,27 @@ void handleLine(char *line) {
     return;
   }
   if (ieq(p, "COLOR")) {
-    uint8_t r, g, b;
-    if (!arg || !*arg || !parseColor(arg, r, g, b)) {
-      reply("ERR 02 color must be RRGGBB");
+    uint8_t r = 0, g = 0, b = 0;
+    bool resolved = (arg && *arg) ? parseColor(arg, r, g, b) : false;
+    if (!resolved && arg && *arg) {
+      static const struct { const char *name; uint8_t r, g, b; } palette[] = {
+        {"RED", 255, 0, 0},      {"GREEN", 0, 255, 0},     {"BLUE", 0, 0, 255},
+        {"YELLOW", 255, 255, 0}, {"CYAN", 0, 255, 255},    {"MAGENTA", 255, 0, 255},
+        {"ORANGE", 255, 102, 0}, {"WHITE", 255, 255, 255}, {"PURPLE", 160, 0, 255},
+        {"OFF", 0, 0, 0},
+      };
+      for (const auto &entry : palette) {
+        if (ieq(arg, entry.name)) {
+          r = entry.r;
+          g = entry.g;
+          b = entry.b;
+          resolved = true;
+          break;
+        }
+      }
+    }
+    if (!resolved) {
+      reply("ERR 02 color must be RRGGBB or a named colour");
       return;
     }
     colorR = r;
@@ -234,6 +277,18 @@ void handleLine(char *line) {
     reply("OK text cleared");
     return;
   }
+  if (ieq(p, "ECHO")) {
+    if (ieq(arg, "1")) echoOn = true;
+    else if (ieq(arg, "0")) echoOn = false;
+    else {
+      reply("ERR 02 echo must be 0 or 1");
+      return;
+    }
+    char buf[24];
+    snprintf(buf, sizeof(buf), "OK echo=%u", (unsigned)echoOn);
+    reply(buf);
+    return;
+  }
   if (ieq(p, "STREAM")) {
     if (ieq(arg, "1")) {
       streamOn = true;
@@ -247,7 +302,24 @@ void handleLine(char *line) {
     }
     return;
   }
-  reply("ERR 01 unknown command");
+  {
+    static const char *known[] = {"HELP", "PING", "INFO", "STAT", "MODE", "COLOR",
+                                 "BRIGHT", "TEXT", "CLEAR", "STREAM", "ECHO"};
+    char buf[96];
+    const char *hint = "";
+    for (const char *k : known) {
+      if (startsWithNoCase(p, k, 3)) {
+        hint = k;
+        break;
+      }
+    }
+    if (*hint) {
+      snprintf(buf, sizeof(buf), "ERR 01 unknown '%.16s' - did you mean %s?", p, hint);
+    } else {
+      snprintf(buf, sizeof(buf), "ERR 01 unknown '%.16s' (HELP)", p);
+    }
+    reply(buf);
+  }
 }
 
 void pollSerial(uint32_t now) {
@@ -259,6 +331,7 @@ void pollSerial(uint32_t now) {
 
     if (c == '\r') continue;
     if (c == '\n') {
+      if (echoOn) Serial.write('\n');
       if (overflow) {
         overflow = false;
         lineLen = 0;
@@ -268,8 +341,15 @@ void pollSerial(uint32_t now) {
         if (lineLen > 0) handleLine(lineBuf);
         lineLen = 0;
       }
+    } else if (c == 8 || c == 127) {
+      // Backspace / DEL: terminals send these when the operator edits a line.
+      if (lineLen > 0) {
+        lineLen--;
+        if (echoOn) Serial.write("\b \b");
+      }
     } else if (lineLen < MAX_LINE) {
       lineBuf[lineLen++] = (char)c;
+      if (echoOn) Serial.write((char)c);
     } else {
       overflow = true;
     }
