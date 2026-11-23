@@ -4,7 +4,7 @@
 
 | 例程 | 内容 | 额外库 | 对应文档 |
 |---|---|---|---|
-| [01_blink_rgb](01_blink_rgb/) | 板载 2 颗 RGB 闪烁 | NeoPixel | [串口/灯](../docs/teach/serial-console.md) |
+| [01_blink_rgb](01_blink_rgb/) | 板载 2 颗 RGB 循环闪红/绿/蓝 | NeoPixel | [串口/灯](../docs/teach/serial-console.md) |
 | [02_rainbow_breathe](02_rainbow_breathe/) | 彩虹与呼吸 | NeoPixel | [串口/灯](../docs/teach/serial-console.md) |
 | [03_ring_show](03_ring_show/) | 单灯环灯效 | NeoPixel | — |
 | [04_dual_ring_show](04_dual_ring_show/) | 双灯环灯效 | NeoPixel | — |

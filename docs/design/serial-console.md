@@ -31,20 +31,25 @@
 
 | 命令 | 作用 | 示例回复 |
 |---|---|---|
-| `HELP` | 列出命令 | `OK commands: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM` |
+| `HELP [CMD]` | 列出命令，或查看单条命令用法 | `OK cmds: HELP PING INFO STAT MODE COLOR BRIGHT TEXT CLEAR STREAM ECHO` / `OK MODE SOLID|RAINBOW|BREATHE|OFF` |
 | `PING` | 链路测试 | `PONG 12345` |
 | `INFO` | 芯片/固件信息 | `{"type":"info","chip":"ESP32-D0WD-V3","mac":"...","flash":4194304,"sdk":"..."}` |
 | `STAT` | 状态遥测 | `{"type":"stat","up_ms":12345,"heap":289000,"rx":42,"tx":118,"cmds":5,"mode":"solid","color":"#FF6600","bright":20,"text":""}` |
 | `MODE SOLID\|RAINBOW\|BREATHE\|OFF` | 灯环模式 | `OK mode=rainbow` |
-| `COLOR RRGGBB` | 设置颜色并切到 SOLID | `OK color=#FF6600` |
+| `COLOR RRGGBB\|命名色` | 设置颜色并切到 SOLID；命名色 `RED GREEN BLUE YELLOW CYAN MAGENTA ORANGE WHITE PURPLE OFF` | `OK color=#FF6600` |
 | `BRIGHT 0..40` | 灯环亮度百分比 | `OK bright=20` |
 | `TEXT <ascii>` | 在 OLED 上显示一行文字（最多 20 字符，5 秒） | `OK text=HELLO` |
 | `CLEAR` | 清除 TEXT | `OK text cleared` |
 | `STREAM 0\|1` | 每秒自动发一条 STAT | `OK stream=1` |
+| `ECHO 0\|1` | 回显输入字符（配裸终端用，默认关） | `OK echo=1` |
 
 08 不接舵机。舵机标定/检测是 09 + 公版 `LT100P/1`，不要再往 08 加 `SERVO` 命令。
 
-错误统一 `ERR <code> <message>`；未知命令、参数缺失、越界都返回错误，不重启、不阻塞。
+错误统一 `ERR <code> <message>`；未知命令、参数缺失、越界都返回错误，不重启、不阻塞。未知命令会带上输入原文，并按前三个字母给出最接近的建议：`ERR 01 unknown 'BOGUS' (HELP)`、`ERR 01 unknown 'MOD' - did you mean MODE?`。
+
+串口按行编辑：支持退格（`0x08`/`0x7F`），`ECHO 1` 时逐字符回显，方便在裸终端里改错字；单行超过 96 字符回 `ERR 05 line too long` 并丢弃该行。
+
+`INFO` 带 `"built":"<编译时间>"` 字段，可以直接看出板子上跑的是哪一次编译；`STAT` 带 `"echo":0|1`。
 
 ### OLED 布局
 

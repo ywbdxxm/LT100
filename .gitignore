@@ -37,3 +37,6 @@ __pycache__/
 # OS
 Thumbs.db
 .DS_Store
+
+# exported student-package archives (hundreds of MB)
+/student-package*.zip*

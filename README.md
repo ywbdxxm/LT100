@@ -63,6 +63,8 @@ LT100/
 > 工作区根的 `resources/` 只是指向包内 `resources/` 的目录联接，用来保留旧文档和网页的相对路径。
 > 学生包只带 08/09 的完整源码；01–07 每个文件夹只有 README 练习说明，没有 `.ino` 成品。
 > 详见 [student-package/README.md](student-package/README.md)。
+> 分发归档是同目录的 `student-package-2026-11-22.zip`（约 905 MB，已在 `.gitignore`；
+> 解压到 `C:\lt100` 这类短路径，包内最深相对路径 246 字符，路径太长会超 260）。
 
 ## 当前状态
 
